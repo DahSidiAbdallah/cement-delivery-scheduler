@@ -4,10 +4,12 @@ from app.extensions import db
 from flask_jwt_extended import jwt_required, get_jwt_identity
 import logging
 import uuid
+from datetime import datetime
 
 bp = Blueprint('orders', __name__, url_prefix='/orders')
+bp.strict_slashes = False
 
-@bp.route('/', methods=['POST', 'OPTIONS'])
+@bp.route('', methods=['POST', 'OPTIONS'])
 @jwt_required()
 def create_order():
     if request.method == 'OPTIONS':
@@ -18,9 +20,28 @@ def create_order():
         logging.debug(f"JWT identity: {identity}")
         data = request.get_json(force=True, silent=True)
         logging.debug(f"Received data: {data}")
+
+        # Convert IDs to UUID
+        client_id = uuid.UUID(data['client_id'])
+        product_id = uuid.UUID(data['product_id'])
+
+        # Convert 'requested_date' string to date object if needed
+        if 'requested_date' in data and isinstance(data['requested_date'], str):
+            try:
+                data['requested_date'] = datetime.strptime(data['requested_date'], '%Y-%m-%d').date()
+            except Exception:
+                return jsonify({"error": "Invalid date format, should be YYYY-MM-DD"}), 400
+
+        # Convert 'requested_time' string to time object if needed
+        if 'requested_time' in data and isinstance(data['requested_time'], str):
+            try:
+                data['requested_time'] = datetime.strptime(data['requested_time'], '%H:%M').time()
+            except Exception:
+                return jsonify({"error": "Invalid time format, should be HH:MM"}), 400
+
         new_order = Order(
-            client_id=data['client_id'],
-            product_id=data['product_id'],
+            client_id=client_id,
+            product_id=product_id,
             quantity=data['quantity'],
             requested_date=data['requested_date'],
             requested_time=data.get('requested_time'),
@@ -34,7 +55,7 @@ def create_order():
         logging.exception("Exception occurred while creating order")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/', methods=['GET', 'OPTIONS'])
+@bp.route('', methods=['GET', 'OPTIONS'])
 @jwt_required()
 def get_orders():
     if request.method == 'OPTIONS':
@@ -77,6 +98,19 @@ def update_order(order_id):
         if not order:
             return jsonify({"message": "Order not found"}), 404
         data = request.get_json(force=True, silent=True)
+
+        # Convert date and time if needed
+        if 'requested_date' in data and isinstance(data['requested_date'], str):
+            try:
+                data['requested_date'] = datetime.strptime(data['requested_date'], '%Y-%m-%d').date()
+            except Exception:
+                return jsonify({"error": "Invalid date format, should be YYYY-MM-DD"}), 400
+        if 'requested_time' in data and isinstance(data['requested_time'], str):
+            try:
+                data['requested_time'] = datetime.strptime(data['requested_time'], '%H:%M').time()
+            except Exception:
+                return jsonify({"error": "Invalid time format, should be HH:MM"}), 400
+
         order.quantity = data.get('quantity', order.quantity)
         order.requested_date = data.get('requested_date', order.requested_date)
         order.requested_time = data.get('requested_time', order.requested_time)

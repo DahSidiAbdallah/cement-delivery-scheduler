@@ -6,8 +6,9 @@ import logging
 import uuid
 
 bp = Blueprint('products', __name__, url_prefix='/products')
+bp.strict_slashes = False
 
-@bp.route('/', methods=['POST', 'OPTIONS'])
+@bp.route('', methods=['POST', 'OPTIONS'])
 @jwt_required()
 def create_product():
     if request.method == 'OPTIONS':
@@ -30,7 +31,7 @@ def create_product():
         logging.exception("Exception occurred while creating product")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/', methods=['GET', 'OPTIONS'])
+@bp.route('', methods=['GET', 'OPTIONS'])
 @jwt_required()
 def get_products():
     if request.method == 'OPTIONS':

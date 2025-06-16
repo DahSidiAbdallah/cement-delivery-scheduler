@@ -6,6 +6,7 @@ import logging
 import uuid
 
 bp = Blueprint('users', __name__, url_prefix='/users')
+bp.strict_slashes = False
 
 @bp.route('/', methods=['POST', 'OPTIONS'])
 @jwt_required()

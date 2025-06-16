@@ -6,8 +6,9 @@ from app.extensions import db
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 bp = Blueprint('trucks', __name__, url_prefix='/trucks')
+bp.strict_slashes = False
 
-@bp.route('/', methods=['POST', 'OPTIONS'])
+@bp.route('', methods=['POST', 'OPTIONS'])
 @jwt_required()
 def create_truck():
     if request.method == 'OPTIONS':
@@ -31,7 +32,7 @@ def create_truck():
         logging.exception("Exception occurred while creating truck")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/', methods=['GET', 'OPTIONS'])
+@bp.route('', methods=['GET', 'OPTIONS'])
 @jwt_required()
 def get_trucks():
     if request.method == 'OPTIONS':

@@ -6,6 +6,7 @@ from app.extensions import db
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 bp = Blueprint('clients', __name__, url_prefix='/clients')
+bp.strict_slashes = False
 
 def log_headers():
     logging.debug("\n=== Incoming Request Headers ===")
@@ -13,7 +14,7 @@ def log_headers():
         logging.debug(f"{k}: {v}")
     logging.debug("================================\n")
 
-@bp.route('/', methods=['POST', 'OPTIONS'])
+@bp.route('', methods=['POST', 'OPTIONS'])
 @jwt_required()
 def create_client():
     if request.method == 'OPTIONS':
@@ -46,7 +47,7 @@ def create_client():
         logging.exception("Exception occurred while creating client")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/', methods=['GET', 'OPTIONS'])
+@bp.route('', methods=['GET', 'OPTIONS'])
 @jwt_required()
 def get_clients():
     if request.method == 'OPTIONS':

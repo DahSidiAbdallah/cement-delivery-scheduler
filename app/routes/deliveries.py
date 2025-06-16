@@ -4,10 +4,12 @@ from flask import Blueprint, request, jsonify
 from app.models import Delivery
 from app.extensions import db
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from datetime import datetime
 
 bp = Blueprint('deliveries', __name__, url_prefix='/deliveries')
+bp.strict_slashes = False
 
-@bp.route('/', methods=['POST', 'OPTIONS'])
+@bp.route('', methods=['POST', 'OPTIONS'])
 @jwt_required()
 def create_delivery():
     if request.method == 'OPTIONS':
@@ -18,12 +20,39 @@ def create_delivery():
         logging.debug(f"JWT identity: {identity}")
         data = request.get_json(force=True, silent=True)
         logging.debug(f"Received data: {data}")
+        
+        # Convert order_id and truck_id from string to UUID
+        if 'order_id' in data and isinstance(data['order_id'], str):
+            try:
+                data['order_id'] = uuid.UUID(data['order_id'])
+            except Exception:
+                return jsonify({"error": "Invalid order_id UUID"}), 400
+        if 'truck_id' in data and isinstance(data['truck_id'], str):
+            try:
+                data['truck_id'] = uuid.UUID(data['truck_id'])
+            except Exception:
+                return jsonify({"error": "Invalid truck_id UUID"}), 400
+
+        # Convert scheduled_date to date
+        if 'scheduled_date' in data and isinstance(data['scheduled_date'], str):
+            try:
+                data['scheduled_date'] = datetime.strptime(data['scheduled_date'], '%Y-%m-%d').date()
+            except Exception:
+                return jsonify({"error": "Invalid date format, should be YYYY-MM-DD"}), 400
+
+        # Convert scheduled_time to time
+        if 'scheduled_time' in data and isinstance(data['scheduled_time'], str):
+            try:
+                data['scheduled_time'] = datetime.strptime(data['scheduled_time'], '%H:%M').time()
+            except Exception:
+                return jsonify({"error": "Invalid time format, should be HH:MM"}), 400
+        
         new_delivery = Delivery(
             order_id=data['order_id'],
             truck_id=data['truck_id'],
             scheduled_date=data.get('scheduled_date'),
             scheduled_time=data.get('scheduled_time'),
-            status=data.get('status', 'Scheduled')
+            status=data.get('status', 'Programmé')
         )
         db.session.add(new_delivery)
         db.session.commit()
@@ -33,7 +62,7 @@ def create_delivery():
         logging.exception("Exception occurred while creating delivery")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/', methods=['GET', 'OPTIONS'])
+@bp.route('', methods=['GET', 'OPTIONS'])
 @jwt_required()
 def get_deliveries():
     if request.method == 'OPTIONS':

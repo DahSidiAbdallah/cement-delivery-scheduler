@@ -5,6 +5,7 @@ from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identi
 import logging
 
 bp = Blueprint('auth', __name__, url_prefix='/auth')
+bp.strict_slashes = False
 
 # User Registration Route
 @bp.route('/register', methods=['POST'])
