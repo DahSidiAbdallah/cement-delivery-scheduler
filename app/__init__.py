@@ -1,6 +1,6 @@
 from flask import Flask
 from flask_cors import CORS
-from .extensions import db, migrate
+from .extensions import db, migrate, jwt
 from .routes import clients, products, trucks, orders, deliveries, users, auth, schedule
 
 def create_app():
@@ -19,6 +19,7 @@ def create_app():
 
     db.init_app(app)
     migrate.init_app(app, db)
+    jwt.init_app(app)
 
     app.register_blueprint(clients.bp)
     app.register_blueprint(products.bp)

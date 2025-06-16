@@ -3,6 +3,7 @@ import uuid
 from flask import Blueprint, request, jsonify
 from app.models import Client
 from app.extensions import db
+from flask_jwt_extended import jwt_required, get_jwt_identity
 
 bp = Blueprint('clients', __name__, url_prefix='/clients')
 
@@ -12,11 +13,16 @@ def log_headers():
         logging.debug(f"{k}: {v}")
     logging.debug("================================\n")
 
-@bp.route('/', methods=['POST'])
+@bp.route('/', methods=['POST', 'OPTIONS'])
+@jwt_required()
 def create_client():
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         # Log headers and JWT identity
         log_headers()
+        identity = get_jwt_identity()
+        logging.debug(f"JWT identity: {identity}")
 
         data = request.get_json(force=True, silent=True)
         logging.debug(f"Received data: {data}")
@@ -40,8 +46,11 @@ def create_client():
         logging.exception("Exception occurred while creating client")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/', methods=['GET'])
+@bp.route('/', methods=['GET', 'OPTIONS'])
+@jwt_required()
 def get_clients():
+    if request.method == 'OPTIONS':
+        return '', 200
     log_headers()
     clients = Client.query.all()
     result = [{
@@ -53,8 +62,11 @@ def get_clients():
     } for c in clients]
     return jsonify(result), 200
 
-@bp.route('/<client_id>', methods=['GET'])
+@bp.route('/<client_id>', methods=['GET', 'OPTIONS'])
+@jwt_required()
 def get_client(client_id):
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         client_uuid = uuid.UUID(client_id)
     except Exception:
@@ -70,8 +82,11 @@ def get_client(client_id):
         "address": client.address
     }), 200
 
-@bp.route('/<client_id>', methods=['PUT'])
+@bp.route('/<client_id>', methods=['PUT', 'OPTIONS'])
+@jwt_required()
 def update_client(client_id):
+    if request.method == 'OPTIONS':
+        return '', 200
     log_headers()
     try:
         client_uuid = uuid.UUID(client_id)
@@ -88,8 +103,11 @@ def update_client(client_id):
     db.session.commit()
     return jsonify({"message": "Client updated"}), 200
 
-@bp.route('/<client_id>', methods=['DELETE'])
+@bp.route('/<client_id>', methods=['DELETE', 'OPTIONS'])
+@jwt_required()
 def delete_client(client_id):
+    if request.method == 'OPTIONS':
+        return '', 200
     log_headers()
     try:
         client_uuid = uuid.UUID(client_id)

@@ -1,15 +1,21 @@
 from flask import Blueprint, request, jsonify
 from app.models import User
 from app.extensions import db
+from flask_jwt_extended import jwt_required, get_jwt_identity
 import logging
 import uuid
 
 bp = Blueprint('users', __name__, url_prefix='/users')
 
-@bp.route('/', methods=['POST'])
+@bp.route('/', methods=['POST', 'OPTIONS'])
+@jwt_required()
 def create_user():
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
+        identity = get_jwt_identity()
+        logging.debug(f"JWT identity: {identity}")
         data = request.get_json(force=True, silent=True)
         logging.debug(f"Received data: {data}")
         new_user = User(
@@ -25,10 +31,15 @@ def create_user():
         logging.exception("Exception occurred while creating user")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/', methods=['GET'])
+@bp.route('/', methods=['GET', 'OPTIONS'])
+@jwt_required()
 def get_users():
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
+        identity = get_jwt_identity()
+        logging.debug(f"JWT identity: {identity}")
         users = User.query.all()
         result = []
         for user in users:
@@ -42,10 +53,15 @@ def get_users():
         logging.exception("Exception occurred while getting users")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/<user_id>', methods=['PUT'])
+@bp.route('/<user_id>', methods=['PUT', 'OPTIONS'])
+@jwt_required()
 def update_user(user_id):
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
+        identity = get_jwt_identity()
+        logging.debug(f"JWT identity: {identity}")
         try:
             user_uuid = uuid.UUID(user_id)
         except Exception:
@@ -63,10 +79,15 @@ def update_user(user_id):
         logging.exception("Exception occurred while updating user")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/<user_id>', methods=['DELETE'])
+@bp.route('/<user_id>', methods=['DELETE', 'OPTIONS'])
+@jwt_required()
 def delete_user(user_id):
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
+        identity = get_jwt_identity()
+        logging.debug(f"JWT identity: {identity}")
         try:
             user_uuid = uuid.UUID(user_id)
         except Exception:

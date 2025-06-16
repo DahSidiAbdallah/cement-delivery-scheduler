@@ -8,38 +8,47 @@ import {
   Button,
   Drawer,
   List,
-  ListItemButton
+  ListItemButton,
+  Divider,
+  Paper
 } from '@mui/material';
-import { Link, Outlet, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+import PeopleIcon from '@mui/icons-material/People';
+import Inventory2Icon from '@mui/icons-material/Inventory2';
+import LocalShippingIcon from '@mui/icons-material/LocalShipping';
+import AssignmentIcon from '@mui/icons-material/Assignment';
+import LocalMallIcon from '@mui/icons-material/LocalMall';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 
 export default function Layout() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const logout = () => {
     localStorage.removeItem('access_token');
     navigate('/');
   };
 
-  // Define your navigation items here
   const navItems = [
-    { label: 'Dashboard',   to: '/dashboard' },
-    { label: 'Clients',     to: '/clients' },
-    { label: 'Products',    to: '/products' },
-    { label: 'Trucks',      to: '/trucks' },
-    { label: 'Orders',      to: '/orders' },
-    { label: 'Deliveries',  to: '/deliveries' },
-    { label: 'Schedule',    to: '/schedule' },
+    { label: 'Dashboard',   to: '/dashboard',   icon: <DashboardIcon color="primary" /> },
+    { label: 'Clients',     to: '/clients',     icon: <PeopleIcon color="primary" /> },
+    { label: 'Products',    to: '/products',    icon: <Inventory2Icon color="secondary" /> },
+    { label: 'Trucks',      to: '/trucks',      icon: <LocalShippingIcon color="success" /> },
+    { label: 'Orders',      to: '/orders',      icon: <AssignmentIcon color="warning" /> },
+    { label: 'Deliveries',  to: '/deliveries',  icon: <LocalMallIcon color="info" /> },
+    { label: 'Schedule',    to: '/schedule',    icon: <CalendarMonthIcon color="error" /> },
   ];
 
   return (
-    <Box sx={{ display: 'flex' }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh', background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)' }}>
       {/* Top App Bar */}
-      <AppBar position="fixed">
+      <AppBar position="fixed" color="default" elevation={2} sx={{ zIndex: 1201 }}>
         <Toolbar>
-          <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            MAFCI 
+          <Typography variant="h5" sx={{ flexGrow: 1, fontWeight: 700, color: 'primary.main' }}>
+            <DashboardIcon sx={{ mr: 1, fontSize: 32 }} /> MAFCI Scheduler
           </Typography>
-          <Button color="inherit" onClick={logout}>
+          <Button color="error" variant="contained" onClick={logout} sx={{ fontWeight: 600 }}>
             Logout
           </Button>
         </Toolbar>
@@ -49,24 +58,40 @@ export default function Layout() {
       <Drawer
         variant="permanent"
         sx={{
-          width: 200,
+          width: 220,
           flexShrink: 0,
-          [`& .MuiDrawer-paper`]: { 
-            width: 200, 
+          [`& .MuiDrawer-paper`]: {
+            width: 220,
             boxSizing: 'border-box',
-            top: 64  /* height of AppBar */ 
+            top: 64,
+            background: 'linear-gradient(180deg, #e3eafc 0%, #f5f7fa 100%)',
+            borderRight: '1px solid #e0e0e0',
           },
         }}
       >
-        <Toolbar /> {/* spacer for AppBar */}
+        <Toolbar />
+        <Divider />
         <List>
           {navItems.map((item) => (
             <ListItemButton
               key={item.to}
               component={Link}
               to={item.to}
+              selected={location.pathname === item.to}
+              sx={{
+                py: 2,
+                borderRadius: 2,
+                mb: 1,
+                mx: 1,
+                background: location.pathname === item.to ? '#e3eafc' : 'transparent',
+                '&:hover': { background: '#e3eafc' },
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2,
+              }}
             >
-              {item.label}
+              {item.icon}
+              <Typography fontWeight={600}>{item.label}</Typography>
             </ListItemButton>
           ))}
         </List>
@@ -77,12 +102,16 @@ export default function Layout() {
         component="main"
         sx={{
           flexGrow: 1,
-          p: 3,
-          mt: 8,    /* margin-top to clear AppBar */
-          ml: 200/8 /* margin-left to clear Drawer (200px / 8 = 25rem) */
+          p: 4,
+          mt: 8,
+          ml: '220px',
+          minHeight: '100vh',
+          background: 'transparent',
         }}
       >
-        <Outlet />
+        <Paper sx={{ p: 3, borderRadius: 3, boxShadow: 2, minHeight: '80vh', background: '#fff' }}>
+          <Outlet />
+        </Paper>
       </Box>
     </Box>
   );

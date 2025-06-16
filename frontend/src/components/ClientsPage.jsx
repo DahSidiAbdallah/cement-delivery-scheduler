@@ -1,9 +1,17 @@
 // src/components/ClientsPage.jsx
 import React, { useEffect, useState } from 'react';
-import {
-  Box, TextField, Button, Paper,
-  Typography, List, ListItem, Snackbar
-} from '@mui/material';
+import Box from '@mui/material/Box';
+import TextField from '@mui/material/TextField';
+import Button from '@mui/material/Button';
+import Paper from '@mui/material/Paper';
+import Typography from '@mui/material/Typography';
+import List from '@mui/material/List';
+import ListItem from '@mui/material/ListItem';
+import Snackbar from '@mui/material/Snackbar';
+import Divider from '@mui/material/Divider';
+import InputAdornment from '@mui/material/InputAdornment';
+import PersonAddAlt1Icon from '@mui/icons-material/PersonAddAlt1';
+import PeopleIcon from '@mui/icons-material/People';
 import api from '../services/api';
 
 export default function ClientsPage() {
@@ -61,25 +69,40 @@ export default function ClientsPage() {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>Clients</Typography>
-      <Box sx={{ display: 'flex', mb: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+        <PeopleIcon color="primary" sx={{ fontSize: 36, mr: 1 }} />
+        <Typography variant="h4" fontWeight={700} color="primary.main" gutterBottom>Clients</Typography>
+      </Box>
+      <Divider sx={{ mb: 2 }} />
+      <Box sx={{ display:'flex', mb:2, gap:2 }}>
         <TextField
-          label="Client Name" 
+          label="Client Name"
           value={name}
           onChange={e => setName(e.target.value)}
-          sx={{ flex: 1, mr: 2 }}
+          sx={{ flex:1 }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <PersonAddAlt1Icon color="action" />
+              </InputAdornment>
+            )
+          }}
         />
-        <Button variant="contained" onClick={handleAdd}>Add</Button>
+        <Button variant="contained" color="primary" size="large" onClick={handleAdd} sx={{ fontWeight: 600, px: 4 }}>
+          Add
+        </Button>
       </Box>
-
-      <Paper>
+      <Paper sx={{ mt: 2, p: 2, borderRadius: 2, boxShadow: 1, background: '#f5f7fa' }}>
+        <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
+          Client List
+        </Typography>
+        <Divider sx={{ mb: 1 }} />
         <List>
           {clients.map(c => (
-            <ListItem key={c.id}>{c.name}</ListItem>
+            <ListItem key={c.id} sx={{ py: 1, borderBottom: '1px solid #e0e0e0' }}>{c.name}</ListItem>
           ))}
         </List>
       </Paper>
-
       <Snackbar
         open={!!snackbar}
         autoHideDuration={3000}

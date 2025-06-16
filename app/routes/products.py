@@ -1,15 +1,21 @@
 from flask import Blueprint, request, jsonify
 from app.models import Product
 from app.extensions import db
+from flask_jwt_extended import jwt_required, get_jwt_identity
 import logging
 import uuid
 
 bp = Blueprint('products', __name__, url_prefix='/products')
 
-@bp.route('/', methods=['POST'])
+@bp.route('/', methods=['POST', 'OPTIONS'])
+@jwt_required()
 def create_product():
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
+        identity = get_jwt_identity()
+        logging.debug(f"JWT identity: {identity}")
         data = request.get_json(force=True, silent=True)
         logging.debug(f"Received data: {data}")
         new_product = Product(
@@ -24,10 +30,15 @@ def create_product():
         logging.exception("Exception occurred while creating product")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/', methods=['GET'])
+@bp.route('/', methods=['GET', 'OPTIONS'])
+@jwt_required()
 def get_products():
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
+        identity = get_jwt_identity()
+        logging.debug(f"JWT identity: {identity}")
         products = Product.query.all()
         result = []
         for product in products:
@@ -41,10 +52,15 @@ def get_products():
         logging.exception("Exception occurred while getting products")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/<product_id>', methods=['PUT'])
+@bp.route('/<product_id>', methods=['PUT', 'OPTIONS'])
+@jwt_required()
 def update_product(product_id):
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
+        identity = get_jwt_identity()
+        logging.debug(f"JWT identity: {identity}")
         try:
             product_uuid = uuid.UUID(product_id)
         except Exception:
@@ -62,10 +78,15 @@ def update_product(product_id):
         logging.exception("Exception occurred while updating product")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/<product_id>', methods=['DELETE'])
+@bp.route('/<product_id>', methods=['DELETE', 'OPTIONS'])
+@jwt_required()
 def delete_product(product_id):
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
+        identity = get_jwt_identity()
+        logging.debug(f"JWT identity: {identity}")
         try:
             product_uuid = uuid.UUID(product_id)
         except Exception:

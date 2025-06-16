@@ -3,13 +3,19 @@ import uuid
 from flask import Blueprint, request, jsonify
 from app.models import Delivery
 from app.extensions import db
+from flask_jwt_extended import jwt_required, get_jwt_identity
 
 bp = Blueprint('deliveries', __name__, url_prefix='/deliveries')
 
-@bp.route('/', methods=['POST'])
+@bp.route('/', methods=['POST', 'OPTIONS'])
+@jwt_required()
 def create_delivery():
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
+        identity = get_jwt_identity()
+        logging.debug(f"JWT identity: {identity}")
         data = request.get_json(force=True, silent=True)
         logging.debug(f"Received data: {data}")
         new_delivery = Delivery(
@@ -27,10 +33,15 @@ def create_delivery():
         logging.exception("Exception occurred while creating delivery")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/', methods=['GET'])
+@bp.route('/', methods=['GET', 'OPTIONS'])
+@jwt_required()
 def get_deliveries():
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
+        identity = get_jwt_identity()
+        logging.debug(f"JWT identity: {identity}")
         deliveries = Delivery.query.all()
         result = []
         for delivery in deliveries:
@@ -47,10 +58,15 @@ def get_deliveries():
         logging.exception("Exception occurred while getting deliveries")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/<delivery_id>', methods=['PUT'])
+@bp.route('/<delivery_id>', methods=['PUT', 'OPTIONS'])
+@jwt_required()
 def update_delivery(delivery_id):
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
+        identity = get_jwt_identity()
+        logging.debug(f"JWT identity: {identity}")
         try:
             delivery_uuid = uuid.UUID(delivery_id)
         except Exception:
@@ -69,10 +85,15 @@ def update_delivery(delivery_id):
         logging.exception("Exception occurred while updating delivery")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/<delivery_id>', methods=['DELETE'])
+@bp.route('/<delivery_id>', methods=['DELETE', 'OPTIONS'])
+@jwt_required()
 def delete_delivery(delivery_id):
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
+        identity = get_jwt_identity()
+        logging.debug(f"JWT identity: {identity}")
         try:
             delivery_uuid = uuid.UUID(delivery_id)
         except Exception:

@@ -1,15 +1,21 @@
 from flask import Blueprint, request, jsonify
 from app.models import Order, Client, Product
 from app.extensions import db
+from flask_jwt_extended import jwt_required, get_jwt_identity
 import logging
 import uuid
 
 bp = Blueprint('orders', __name__, url_prefix='/orders')
 
-@bp.route('/', methods=['POST'])
+@bp.route('/', methods=['POST', 'OPTIONS'])
+@jwt_required()
 def create_order():
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
+        identity = get_jwt_identity()
+        logging.debug(f"JWT identity: {identity}")
         data = request.get_json(force=True, silent=True)
         logging.debug(f"Received data: {data}")
         new_order = Order(
@@ -28,10 +34,15 @@ def create_order():
         logging.exception("Exception occurred while creating order")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/', methods=['GET'])
+@bp.route('/', methods=['GET', 'OPTIONS'])
+@jwt_required()
 def get_orders():
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
+        identity = get_jwt_identity()
+        logging.debug(f"JWT identity: {identity}")
         orders = Order.query.all()
         result = []
         for order in orders:
@@ -49,10 +60,15 @@ def get_orders():
         logging.exception("Exception occurred while getting orders")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/<order_id>', methods=['PUT'])
+@bp.route('/<order_id>', methods=['PUT', 'OPTIONS'])
+@jwt_required()
 def update_order(order_id):
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
+        identity = get_jwt_identity()
+        logging.debug(f"JWT identity: {identity}")
         try:
             order_uuid = uuid.UUID(order_id)
         except Exception:
@@ -72,10 +88,15 @@ def update_order(order_id):
         logging.exception("Exception occurred while updating order")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/<order_id>', methods=['DELETE'])
+@bp.route('/<order_id>', methods=['DELETE', 'OPTIONS'])
+@jwt_required()
 def delete_order(order_id):
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
+        identity = get_jwt_identity()
+        logging.debug(f"JWT identity: {identity}")
         try:
             order_uuid = uuid.UUID(order_id)
         except Exception:

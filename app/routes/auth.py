@@ -29,8 +29,10 @@ def register():
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
 # Login Route
-@bp.route('/login', methods=['POST'])
+@bp.route('/login', methods=['POST', 'OPTIONS'])
 def login():
+    if request.method == 'OPTIONS':
+        return '', 200
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
         data = request.get_json(force=True, silent=True)
