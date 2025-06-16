@@ -1,0 +1,12 @@
+Flask
+Flask-RESTful
+Flask-JWT-Extended
+Flask-SQLAlchemy
+Flask-Migrate
+python-dotenv
+psycopg2-binary
+pandas
+openpyxl
+ortools
+twilio
+openai
