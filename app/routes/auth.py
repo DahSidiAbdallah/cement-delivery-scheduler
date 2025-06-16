@@ -31,12 +31,18 @@ def register():
 # Login Route
 @bp.route('/login', methods=['POST'])
 def login():
-    data = request.get_json()
-    user = User.query.filter_by(username=data['username']).first()
-
-    if user and user.check_password(data['password']):
-        access_token = create_access_token(identity=str(user.id))  # <--- FIX HERE
-        return jsonify(access_token=access_token), 200
-
-    return jsonify({"message": "Invalid credentials"}), 401
+    try:
+        logging.debug(f"Request headers: {dict(request.headers)}")
+        data = request.get_json(force=True, silent=True)
+        logging.debug(f"Received data: {data}")
+        user = User.query.filter_by(username=data['username']).first()
+        if user and user.check_password(data['password']):
+            access_token = create_access_token(identity=str(user.id))  # Use string for identity
+            logging.info(f"User logged in: {user.username}")
+            return jsonify(access_token=access_token), 200
+        logging.warning(f"Invalid login attempt for username: {data.get('username')}")
+        return jsonify({"message": "Invalid credentials"}), 401
+    except Exception as e:
+        logging.exception("Exception occurred during login")
+        return jsonify({"error": "Server error", "details": str(e)}), 500
 

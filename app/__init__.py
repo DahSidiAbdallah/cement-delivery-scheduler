@@ -1,4 +1,5 @@
 from flask import Flask
+from flask_cors import CORS
 from .extensions import db, migrate, jwt
 from .routes import clients, products, trucks, orders, deliveries, users, auth, schedule
 
@@ -6,16 +7,14 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object('config.Config')
 
-    # ———————————————
-    # DEV-ONLY “ALLOW EVERYTHING” CORS + OPTIONS handler
-    # ———————————————
-    @app.after_request
-    def apply_cors(resp):
-        resp.headers['Access-Control-Allow-Origin']      = 'http://localhost:5173'
-        resp.headers['Access-Control-Allow-Credentials'] = 'true'
-        resp.headers['Access-Control-Allow-Headers']     = 'Content-Type,Authorization'
-        resp.headers['Access-Control-Allow-Methods']     = 'GET,POST,PUT,DELETE,OPTIONS'
-        return resp
+    # ——————————————————————————————————————
+    # Use Flask-CORS to handle ALL preflight + headers
+    # ——————————————————————————————————————
+    CORS(
+        app,
+        resources={r"/*": {"origins": "http://localhost:5173"}},
+        supports_credentials=True
+    )
 
     db.init_app(app)
     migrate.init_app(app, db)

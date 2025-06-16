@@ -1,4 +1,5 @@
 import logging
+import uuid
 from flask import Blueprint, request, jsonify
 from app.models import Client
 from app.extensions import db
@@ -7,32 +8,26 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 bp = Blueprint('clients', __name__, url_prefix='/clients')
 
 def log_headers():
-    print("\n=== Incoming Request Headers ===")
+    logging.debug("\n=== Incoming Request Headers ===")
     for k, v in request.headers.items():
-        print(f"{k}: {v}")
-    print("================================\n")
+        logging.debug(f"{k}: {v}")
+    logging.debug("================================\n")
 
 @bp.route('/', methods=['POST'])
-#@jwt_required()
+@jwt_required()
 def create_client():
     try:
-        # Debug: log headers and JWT identity
-        logging.debug(f"Request headers: {dict(request.headers)}")
+        # Log headers and JWT identity
+        log_headers()
         identity = get_jwt_identity()
         logging.debug(f"JWT identity: {identity}")
 
         data = request.get_json(force=True, silent=True)
         logging.debug(f"Received data: {data}")
 
-        if not data:
-            logging.error("No JSON payload received.")
-            return jsonify({"error": "No input data provided"}), 400
-
-        required_fields = ['name']
-        for field in required_fields:
-            if field not in data or not isinstance(data[field], str):
-                logging.error(f"Missing or invalid field: {field}")
-                return jsonify({"error": f"Missing or invalid field: {field}"}), 400
+        if not data or 'name' not in data or not isinstance(data['name'], str):
+            logging.error("Missing or invalid 'name' field")
+            return jsonify({"error": "Missing or invalid field: name"}), 400
 
         new_client = Client(
             name=data['name'],
@@ -52,22 +47,25 @@ def create_client():
 @bp.route('/', methods=['GET'])
 @jwt_required()
 def get_clients():
+    log_headers()
     clients = Client.query.all()
-    result = []
-    for client in clients:
-        result.append({
-            "id": str(client.id),
-            "name": client.name,
-            "priority_level": client.priority_level,
-            "contact_info": client.contact_info,
-            "address": client.address
-        })
+    result = [{
+        "id":               str(c.id),
+        "name":             c.name,
+        "priority_level":   c.priority_level,
+        "contact_info":     c.contact_info,
+        "address":          c.address
+    } for c in clients]
     return jsonify(result), 200
 
 @bp.route('/<client_id>', methods=['GET'])
 @jwt_required()
 def get_client(client_id):
-    client = Client.query.get(client_id)
+    try:
+        client_uuid = uuid.UUID(client_id)
+    except Exception:
+        return jsonify({"message": "Invalid client ID format"}), 400
+    client = Client.query.get(client_uuid)
     if not client:
         return jsonify({"message": "Client not found"}), 404
     return jsonify({
@@ -79,22 +77,26 @@ def get_client(client_id):
     }), 200
 
 @bp.route('/<client_id>', methods=['PUT'])
+@jwt_required()
 def update_client(client_id):
+    log_headers()
     client = Client.query.get(client_id)
     if not client:
         return jsonify({"message": "Client not found"}), 404
 
     data = request.get_json()
-    client.name = data.get('name', client.name)
-    client.priority_level = data.get('priority_level', client.priority_level)
-    client.contact_info = data.get('contact_info', client.contact_info)
-    client.address = data.get('address', client.address)
+    client.name            = data.get('name', client.name)
+    client.priority_level  = data.get('priority_level', client.priority_level)
+    client.contact_info    = data.get('contact_info', client.contact_info)
+    client.address         = data.get('address', client.address)
 
     db.session.commit()
     return jsonify({"message": "Client updated"}), 200
 
 @bp.route('/<client_id>', methods=['DELETE'])
+@jwt_required()
 def delete_client(client_id):
+    log_headers()
     client = Client.query.get(client_id)
     if not client:
         return jsonify({"message": "Client not found"}), 404

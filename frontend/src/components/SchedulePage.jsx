@@ -1,5 +1,6 @@
 // src/components/SchedulePage.jsx
 import React, { useState } from 'react';
+import { saveAs } from 'file-saver';
 import api from '../services/api';
 import {
   Box, Button, Typography, Paper,
@@ -36,9 +37,24 @@ export default function SchedulePage() {
       <Typography variant="h4" gutterBottom>
         Delivery Schedule
       </Typography>
-      <Button variant="contained" onClick={generate}>
-        Generate Schedule
-      </Button>
+      <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+        <Button variant="contained" onClick={generate}>
+          Generate Schedule
+        </Button>
+        <Button
+          variant="outlined"
+          onClick={async () => {
+            try {
+              const res = await api.get('/schedule/export', { responseType: 'blob' });
+              saveAs(res.data, 'delivery_schedule.xlsx');
+            } catch (err) {
+              setSnackbar({ message: 'Error exporting Excel', severity: 'error' });
+            }
+          }}
+        >
+          Export to Excel
+        </Button>
+      </Box>
 
       {/* Show schedule items */}
       {schedule.length > 0 && (
