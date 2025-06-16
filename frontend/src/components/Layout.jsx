@@ -20,6 +20,7 @@ import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import LocalMallIcon from '@mui/icons-material/LocalMall';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import MAFCILogo from '../assets/MAFCI.png';
 
 export default function Layout() {
   const navigate = useNavigate();
@@ -31,13 +32,13 @@ export default function Layout() {
   };
 
   const navItems = [
-    { label: 'Dashboard',   to: '/dashboard',   icon: <DashboardIcon color="primary" /> },
+    { label: 'Tableau de bord',   to: '/dashboard',   icon: <DashboardIcon color="primary" /> },
     { label: 'Clients',     to: '/clients',     icon: <PeopleIcon color="primary" /> },
-    { label: 'Products',    to: '/products',    icon: <Inventory2Icon color="secondary" /> },
-    { label: 'Trucks',      to: '/trucks',      icon: <LocalShippingIcon color="success" /> },
-    { label: 'Orders',      to: '/orders',      icon: <AssignmentIcon color="warning" /> },
-    { label: 'Deliveries',  to: '/deliveries',  icon: <LocalMallIcon color="info" /> },
-    { label: 'Schedule',    to: '/schedule',    icon: <CalendarMonthIcon color="error" /> },
+    { label: 'Produits',    to: '/products',    icon: <Inventory2Icon color="secondary" /> },
+    { label: 'Camions',      to: '/trucks',      icon: <LocalShippingIcon color="success" /> },
+    { label: 'Commandes',      to: '/orders',      icon: <AssignmentIcon color="warning" /> },
+    { label: 'Livraisons',  to: '/deliveries',  icon: <LocalMallIcon color="info" /> },
+    { label: 'Calendrier',    to: '/schedule',    icon: <CalendarMonthIcon color="error" /> },
   ];
 
   return (
@@ -45,11 +46,12 @@ export default function Layout() {
       {/* Top App Bar */}
       <AppBar position="fixed" color="default" elevation={2} sx={{ zIndex: 1201 }}>
         <Toolbar>
-          <Typography variant="h5" sx={{ flexGrow: 1, fontWeight: 700, color: 'primary.main' }}>
-            <DashboardIcon sx={{ mr: 1, fontSize: 32 }} /> MAFCI Scheduler
+          <Typography variant="h5" sx={{ flexGrow: 1, fontWeight: 700, color: 'primary.main', display: 'flex', alignItems: 'center' }}>
+            <img src={MAFCILogo} alt="MAFCI Logo" style={{ height: 50, marginRight: 12, verticalAlign: 'middle' }} />
+           
           </Typography>
           <Button color="error" variant="contained" onClick={logout} sx={{ fontWeight: 600 }}>
-            Logout
+            Déconnexion
           </Button>
         </Toolbar>
       </AppBar>

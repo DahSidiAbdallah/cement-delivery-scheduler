@@ -26,23 +26,23 @@ export default function TrucksPage() {
       });
       setPlate(''); setCapacity(''); setDriver('');
       load();
-      setSnackbar({ message:'Truck added', severity:'success' });
+      setSnackbar({ message:'Camion ajouté', severity:'success' });
     } catch {
-      setSnackbar({ message:'Error adding truck', severity:'error' });
+      setSnackbar({ message:'Erreur lors de l\'ajout du camion', severity:'error' });
     }
   };
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>Trucks</Typography>
+      <Typography variant="h4" gutterBottom>Camions</Typography>
       <Box sx={{ display:'flex', mb:2 }}>
-        <TextField label="Plate #" value={plate}
+        <TextField label="Immatriculation" value={plate}
           onChange={e=>setPlate(e.target.value)} sx={{ mr:2 }} />
-        <TextField label="Capacity" value={capacity}
+        <TextField label="Capacité" value={capacity}
           type="number" onChange={e=>setCapacity(e.target.value)} sx={{ mr:2 }} />
-        <TextField label="Driver" value={driver}
+        <TextField label="Chauffeur" value={driver}
           onChange={e=>setDriver(e.target.value)} sx={{ mr:2 }} />
-        <Button variant="contained" onClick={handleAdd}>Add</Button>
+        <Button variant="contained" onClick={handleAdd}>Ajouter</Button>
       </Box>
 
       <Paper>

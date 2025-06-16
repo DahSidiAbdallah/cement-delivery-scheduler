@@ -38,15 +38,15 @@ export default function OrdersPage() {
       });
       setQuantity(''); setDate(''); setTime('');
       load();
-      setSnackbar({ message:'Order added', severity:'success' });
+      setSnackbar({ message:'Commande ajoutée', severity:'success' });
     } catch {
-      setSnackbar({ message:'Error adding order', severity:'error' });
+      setSnackbar({ message:'Erreur lors de l\'ajout de la commande', severity:'error' });
     }
   };
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>Orders</Typography>
+      <Typography variant="h4" gutterBottom>Commandes</Typography>
       <Box sx={{ display:'flex', flexWrap:'wrap', gap:2, mb:2 }}>
         <Select
           value={clientId} onChange={e=>setClientId(e.target.value)}
@@ -59,11 +59,11 @@ export default function OrdersPage() {
           value={productId} onChange={e=>setProductId(e.target.value)}
           displayEmpty sx={{ minWidth:150 }}
         >
-          <MenuItem value="">-- Product --</MenuItem>
+          <MenuItem value="">-- Produit --</MenuItem>
           {products.map(p => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
         </Select>
         <TextField
-          label="Quantity (t)" type="number"
+          label="Quantité (t)" type="number"
           value={quantity} onChange={e=>setQuantity(e.target.value)}
           sx={{ width:120 }}
         />
@@ -73,11 +73,11 @@ export default function OrdersPage() {
           InputLabelProps={{ shrink: true }}
         />
         <TextField
-          label="Time" type="time"
+          label="Heure" type="time"
           value={time} onChange={e=>setTime(e.target.value)}
           InputLabelProps={{ shrink: true }}
         />
-        <Button variant="contained" onClick={handleAdd}>Add Order</Button>
+        <Button variant="contained" onClick={handleAdd}>Ajouter la commande</Button>
       </Box>
 
       <Paper>

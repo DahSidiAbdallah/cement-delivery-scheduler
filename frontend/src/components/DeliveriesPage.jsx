@@ -36,21 +36,21 @@ export default function DeliveriesPage() {
       });
       setDate(''); setTime('');
       load();
-      setSnackbar({ message:'Delivery added', severity:'success' });
+      setSnackbar({ message:'Livraison ajoutée', severity:'success' });
     } catch {
-      setSnackbar({ message:'Error adding delivery', severity:'error' });
+      setSnackbar({ message:'Erreur lors de l\'ajout de la livraison', severity:'error' });
     }
   };
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>Deliveries</Typography>
+      <Typography variant="h4" gutterBottom>Livraisons</Typography>
       <Box sx={{ display:'flex', flexWrap:'wrap', gap:2, mb:2 }}>
         <Select
           value={orderId} onChange={e=>setOrderId(e.target.value)}
           displayEmpty sx={{ minWidth:150 }}
         >
-          <MenuItem value="">-- Order --</MenuItem>
+          <MenuItem value="">-- Commande --</MenuItem>
           {orders.map(o => (
             <MenuItem key={o.id} value={o.id}>{o.id}</MenuItem>
           ))}
@@ -59,7 +59,7 @@ export default function DeliveriesPage() {
           value={truckId} onChange={e=>setTruckId(e.target.value)}
           displayEmpty sx={{ minWidth:150 }}
         >
-          <MenuItem value="">-- Truck --</MenuItem>
+          <MenuItem value="">-- Camion --</MenuItem>
           {trucks.map(t => (
             <MenuItem key={t.id} value={t.id}>{t.plate_number}</MenuItem>
           ))}
@@ -71,19 +71,19 @@ export default function DeliveriesPage() {
           sx={{ width:140 }}
         />
         <TextField
-          label="Time" type="time"
+          label="Heure" type="time"
           value={time} onChange={e=>setTime(e.target.value)}
           InputLabelProps={{ shrink: true }}
           sx={{ width:120 }}
         />
-        <Button variant="contained" onClick={handleAdd}>Add Delivery</Button>
+        <Button variant="contained" onClick={handleAdd}>Ajouter la livraison</Button>
       </Box>
 
       <Paper>
         <List>
           {deliveries.map(d => (
             <ListItem key={d.id}>
-              O:{d.order_id} T:{d.truck_id} @ {d.scheduled_date}
+              Cde:{d.order_id} Camion:{d.truck_id} @ {d.scheduled_date}
               {d.scheduled_time && ` ${d.scheduled_time}`}
             </ListItem>
           ))}

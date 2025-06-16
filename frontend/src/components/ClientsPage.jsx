@@ -76,7 +76,7 @@ export default function ClientsPage() {
       <Divider sx={{ mb: 2 }} />
       <Box sx={{ display:'flex', mb:2, gap:2 }}>
         <TextField
-          label="Client Name"
+          label="Nom du client"
           value={name}
           onChange={e => setName(e.target.value)}
           sx={{ flex:1 }}
@@ -89,12 +89,12 @@ export default function ClientsPage() {
           }}
         />
         <Button variant="contained" color="primary" size="large" onClick={handleAdd} sx={{ fontWeight: 600, px: 4 }}>
-          Add
+          Ajouter
         </Button>
       </Box>
       <Paper sx={{ mt: 2, p: 2, borderRadius: 2, boxShadow: 1, background: '#f5f7fa' }}>
         <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
-          Client List
+          Liste des clients
         </Typography>
         <Divider sx={{ mb: 1 }} />
         <List>

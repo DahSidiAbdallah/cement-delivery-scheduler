@@ -12,22 +12,22 @@ export default function SchedulePage() {
   const [snackbar, setSnackbar]   = useState(null);
 
   const generate = async () => {
-    console.log('▶️ Generate button clicked');
+    console.log('▶️ Générer le planning cliqué');
     try {
       const res = await api.get('/schedule/deliveries');
-      console.log('✅ Schedule response:', res);
+      console.log('✅ Réponse du planning:', res);
       if (res.data.schedule) {
         setSchedule(res.data.schedule);
-        setSnackbar({ message: 'Schedule generated', severity: 'success' });
+        setSnackbar({ message: 'Planning généré', severity: 'success' });
       } else {
-        console.warn('⚠️ No `schedule` field in response:', res.data);
-        setSnackbar({ message: 'Unexpected response format', severity: 'warning' });
+        console.warn('⚠️ Champ `schedule` manquant dans la réponse:', res.data);
+        setSnackbar({ message: 'Format de réponse inattendu', severity: 'warning' });
       }
     } catch (err) {
-      console.error('❌ Error generating schedule:', err);
+      console.error('❌ Erreur lors de la génération du planning:', err);
       const msg = err.response?.data?.message
         || err.message
-        || 'Unknown error';
+        || 'Erreur inconnue';
       setSnackbar({ message: msg, severity: 'error' });
     }
   };
@@ -35,36 +35,36 @@ export default function SchedulePage() {
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
-        Delivery Schedule
+        Planning des livraisons
       </Typography>
       <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
         <Button variant="contained" onClick={generate}>
-          Generate Schedule
+          Générer le planning
         </Button>
         <Button
           variant="outlined"
           onClick={async () => {
             try {
               const res = await api.get('/schedule/export', { responseType: 'blob' });
-              saveAs(res.data, 'delivery_schedule.xlsx');
+              saveAs(res.data, 'planning_livraisons.xlsx');
             } catch (err) {
-              setSnackbar({ message: 'Error exporting Excel', severity: 'error' });
+              setSnackbar({ message: 'Erreur lors de l\'export Excel', severity: 'error' });
             }
           }}
         >
-          Export to Excel
+          Exporter en Excel
         </Button>
       </Box>
 
-      {/* Show schedule items */}
+      {/* Affichage du planning */}
       {schedule.length > 0 && (
         <Paper sx={{ mt: 3, p: 2 }}>
-          <Typography variant="h6">Assignments</Typography>
+          <Typography variant="h6">Affectations</Typography>
           <List>
             {schedule.map((item, idx) => (
               <ListItem key={idx}>
-                <strong>Truck:</strong> {item.truck} &nbsp; 
-                <strong>Orders:</strong> {item.orders.join(', ')}
+                <strong>Camion :</strong> {item.truck} &nbsp; 
+                <strong>Commandes :</strong> {item.orders.join(', ')}
               </ListItem>
             ))}
           </List>

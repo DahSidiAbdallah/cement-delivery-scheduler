@@ -12,29 +12,22 @@ import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const logout = () => {
-    localStorage.removeItem('access_token');
-    navigate('/');
-  };
 
   const pages = [
     { label: 'Clients',    to: '/clients',    icon: <PeopleIcon fontSize="large" color="primary" /> },
-    { label: 'Products',   to: '/products',   icon: <Inventory2Icon fontSize="large" color="secondary" /> },
-    { label: 'Trucks',     to: '/trucks',     icon: <LocalShippingIcon fontSize="large" color="success" /> },
-    { label: 'Orders',     to: '/orders',     icon: <AssignmentIcon fontSize="large" color="warning" /> },
-    { label: 'Deliveries', to: '/deliveries', icon: <LocalMallIcon fontSize="large" color="info" /> },
-    { label: 'Schedule',   to: '/schedule',   icon: <CalendarMonthIcon fontSize="large" color="error" /> },
+    { label: 'Produits',   to: '/products',   icon: <Inventory2Icon fontSize="large" color="secondary" /> },
+    { label: 'Camions',     to: '/trucks',     icon: <LocalShippingIcon fontSize="large" color="success" /> },
+    { label: 'Commandes',     to: '/orders',     icon: <AssignmentIcon fontSize="large" color="warning" /> },
+    { label: 'Livraisons', to: '/deliveries', icon: <LocalMallIcon fontSize="large" color="info" /> },
+    { label: 'Calendrier',   to: '/schedule',   icon: <CalendarMonthIcon fontSize="large" color="error" /> },
   ];
 
   return (
     <Box sx={{ p: 4, background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)', minHeight: '100vh' }}>
       <Box sx={{ display:'flex', justifyContent:'space-between', alignItems:'center', mb:4 }}>
         <Typography variant="h3" fontWeight={700} color="primary.main">
-          <DashboardIcon sx={{ mr: 1, fontSize: 40 }} /> Dashboard
+          <DashboardIcon sx={{ mr: 1, fontSize: 40 }} /> Tableau de bord
         </Typography>
-        <Button color="error" variant="contained" onClick={logout} sx={{ fontWeight: 600 }}>
-          Logout
-        </Button>
       </Box>
       <Divider sx={{ mb: 4 }} />
       <Grid container spacing={4} justifyContent="center">
@@ -55,7 +48,7 @@ export default function Dashboard() {
       </Grid>
       <Paper sx={{ mt: 6, p: 2, textAlign: 'center', background: '#e3eafc', borderRadius: 2 }} elevation={0}>
         <Typography variant="body2" color="text.secondary">
-          Cement Delivery Scheduler &copy; {new Date().getFullYear()} &mdash; Powered by MAFCI
+          Planificateur de livraison de ciment &copy; {new Date().getFullYear()} &mdash;  par MAFCI
         </Typography>
       </Paper>
     </Box>

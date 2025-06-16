@@ -21,18 +21,18 @@ export default function ProductsPage() {
       await api.post('/products', { name, type });
       setName(''); setType('');
       load();
-      setSnackbar({ message:'Product added', severity:'success' });
+      setSnackbar({ message:'Produit ajouté', severity:'success' });
     } catch {
-      setSnackbar({ message:'Error adding product', severity:'error' });
+      setSnackbar({ message:'Erreur lors de l\'ajout du produit', severity:'error' });
     }
   };
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>Products</Typography>
+      <Typography variant="h4" gutterBottom>Produits</Typography>
       <Box sx={{ display:'flex', mb:2 }}>
         <TextField
-          label="Name" value={name}
+          label="Nom" value={name}
           onChange={e=>setName(e.target.value)}
           sx={{ mr:2 }}
         />
@@ -41,7 +41,7 @@ export default function ProductsPage() {
           onChange={e=>setType(e.target.value)}
           sx={{ mr:2 }}
         />
-        <Button variant="contained" onClick={handleAdd}>Add</Button>
+        <Button variant="contained" onClick={handleAdd}>Ajouter</Button>
       </Box>
 
       <Paper>
