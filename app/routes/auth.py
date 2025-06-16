@@ -46,3 +46,13 @@ def login():
         logging.exception("Exception occurred during login")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
+def verify_token():
+    auth_header = request.headers.get('Authorization')
+    if not auth_header:
+        return {'error': 'Missing Authorization Header'}, 401
+    if not auth_header.startswith('Bearer '):
+        return {'error': 'Invalid Authorization Header'}, 401
+    token = auth_header.split(' ')[1]
+    # Verify token logic here
+    return {'token': token}, 200
+

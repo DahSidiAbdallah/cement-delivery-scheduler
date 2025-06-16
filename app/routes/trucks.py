@@ -1,18 +1,15 @@
 import logging
+import uuid
 from flask import Blueprint, request, jsonify
 from app.models import Truck
 from app.extensions import db
-from flask_jwt_extended import jwt_required, get_jwt_identity
 
 bp = Blueprint('trucks', __name__, url_prefix='/trucks')
 
 @bp.route('/', methods=['POST'])
-@jwt_required()
 def create_truck():
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
-        identity = get_jwt_identity()
-        logging.debug(f"JWT identity: {identity}")
         data = request.get_json(force=True, silent=True)
         logging.debug(f"Received data: {data}")
         new_truck = Truck(
@@ -29,12 +26,9 @@ def create_truck():
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
 @bp.route('/', methods=['GET'])
-@jwt_required()
 def get_trucks():
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
-        identity = get_jwt_identity()
-        logging.debug(f"JWT identity: {identity}")
         trucks = Truck.query.all()
         result = []
         for truck in trucks:
@@ -50,13 +44,14 @@ def get_trucks():
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
 @bp.route('/<truck_id>', methods=['PUT'])
-@jwt_required()
 def update_truck(truck_id):
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
-        identity = get_jwt_identity()
-        logging.debug(f"JWT identity: {identity}")
-        truck = Truck.query.get(truck_id)
+        try:
+            truck_uuid = uuid.UUID(truck_id)
+        except Exception:
+            return jsonify({"message": "Invalid truck ID format"}), 400
+        truck = Truck.query.get(truck_uuid)
         if not truck:
             return jsonify({"message": "Truck not found"}), 404
         data = request.get_json(force=True, silent=True)
@@ -71,13 +66,14 @@ def update_truck(truck_id):
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
 @bp.route('/<truck_id>', methods=['DELETE'])
-@jwt_required()
 def delete_truck(truck_id):
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
-        identity = get_jwt_identity()
-        logging.debug(f"JWT identity: {identity}")
-        truck = Truck.query.get(truck_id)
+        try:
+            truck_uuid = uuid.UUID(truck_id)
+        except Exception:
+            return jsonify({"message": "Invalid truck ID format"}), 400
+        truck = Truck.query.get(truck_uuid)
         if not truck:
             return jsonify({"message": "Truck not found"}), 404
         db.session.delete(truck)

@@ -3,7 +3,6 @@ import uuid
 from flask import Blueprint, request, jsonify
 from app.models import Client
 from app.extensions import db
-from flask_jwt_extended import jwt_required, get_jwt_identity
 
 bp = Blueprint('clients', __name__, url_prefix='/clients')
 
@@ -14,13 +13,10 @@ def log_headers():
     logging.debug("================================\n")
 
 @bp.route('/', methods=['POST'])
-@jwt_required()
 def create_client():
     try:
         # Log headers and JWT identity
         log_headers()
-        identity = get_jwt_identity()
-        logging.debug(f"JWT identity: {identity}")
 
         data = request.get_json(force=True, silent=True)
         logging.debug(f"Received data: {data}")
@@ -45,7 +41,6 @@ def create_client():
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
 @bp.route('/', methods=['GET'])
-@jwt_required()
 def get_clients():
     log_headers()
     clients = Client.query.all()
@@ -59,7 +54,6 @@ def get_clients():
     return jsonify(result), 200
 
 @bp.route('/<client_id>', methods=['GET'])
-@jwt_required()
 def get_client(client_id):
     try:
         client_uuid = uuid.UUID(client_id)
@@ -77,30 +71,33 @@ def get_client(client_id):
     }), 200
 
 @bp.route('/<client_id>', methods=['PUT'])
-@jwt_required()
 def update_client(client_id):
     log_headers()
-    client = Client.query.get(client_id)
+    try:
+        client_uuid = uuid.UUID(client_id)
+    except Exception:
+        return jsonify({"message": "Invalid client ID format"}), 400
+    client = Client.query.get(client_uuid)
     if not client:
         return jsonify({"message": "Client not found"}), 404
-
     data = request.get_json()
     client.name            = data.get('name', client.name)
     client.priority_level  = data.get('priority_level', client.priority_level)
     client.contact_info    = data.get('contact_info', client.contact_info)
     client.address         = data.get('address', client.address)
-
     db.session.commit()
     return jsonify({"message": "Client updated"}), 200
 
 @bp.route('/<client_id>', methods=['DELETE'])
-@jwt_required()
 def delete_client(client_id):
     log_headers()
-    client = Client.query.get(client_id)
+    try:
+        client_uuid = uuid.UUID(client_id)
+    except Exception:
+        return jsonify({"message": "Invalid client ID format"}), 400
+    client = Client.query.get(client_uuid)
     if not client:
         return jsonify({"message": "Client not found"}), 404
-
     db.session.delete(client)
     db.session.commit()
     return jsonify({"message": "Client deleted"}), 200

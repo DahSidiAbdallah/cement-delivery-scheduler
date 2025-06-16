@@ -1,19 +1,78 @@
 // vite.config.js
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
   server: {
-    // any request to these paths is proxied to your Flask server
     proxy: {
-      '/auth':        'http://localhost:5000',
-      '/clients':     'http://localhost:5000',
-      '/products':    'http://localhost:5000',
-      '/trucks':      'http://localhost:5000',
-      '/orders':      'http://localhost:5000',
-      '/deliveries':  'http://localhost:5000',
-      '/schedule':    'http://localhost:5000',
+      '/auth': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/auth/, '/auth'),
+        configure: (proxy, options) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            console.log('[VITE PROXY] Request Headers:', JSON.stringify(proxyReq.getHeaders(), null, 2))
+          })
+        }
+      },
+      '/clients': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/clients/, '/clients'),
+        configure: (proxy, options) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            console.log('[VITE PROXY] Request Headers:', JSON.stringify(proxyReq.getHeaders(), null, 2))
+          })
+        }
+      },
+      '/products': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/products/, '/products'),
+        configure: (proxy, options) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            console.log('[VITE PROXY] Request Headers:', JSON.stringify(proxyReq.getHeaders(), null, 2))
+          })
+        }
+      },
+      '/trucks': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/trucks/, '/trucks'),
+        configure: (proxy, options) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            console.log('[VITE PROXY] Request Headers:', JSON.stringify(proxyReq.getHeaders(), null, 2))
+          })
+        }
+      },
+      '/orders': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/orders/, '/orders'),
+        configure: (proxy, options) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            console.log('[VITE PROXY] Request Headers:', JSON.stringify(proxyReq.getHeaders(), null, 2))
+          })
+        }
+      },
+      '/deliveries': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/deliveries/, '/deliveries'),
+        configure: (proxy, options) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            console.log('[VITE PROXY] Request Headers:', JSON.stringify(proxyReq.getHeaders(), null, 2))
+          })
+        }
+      },
+      // add other paths similarly...
     }
   }
-});
+})

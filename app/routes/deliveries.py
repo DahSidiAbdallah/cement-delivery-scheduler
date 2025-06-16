@@ -1,18 +1,15 @@
 import logging
+import uuid
 from flask import Blueprint, request, jsonify
 from app.models import Delivery
 from app.extensions import db
-from flask_jwt_extended import jwt_required, get_jwt_identity
 
 bp = Blueprint('deliveries', __name__, url_prefix='/deliveries')
 
 @bp.route('/', methods=['POST'])
-@jwt_required()
 def create_delivery():
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
-        identity = get_jwt_identity()
-        logging.debug(f"JWT identity: {identity}")
         data = request.get_json(force=True, silent=True)
         logging.debug(f"Received data: {data}")
         new_delivery = Delivery(
@@ -31,12 +28,9 @@ def create_delivery():
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
 @bp.route('/', methods=['GET'])
-@jwt_required()
 def get_deliveries():
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
-        identity = get_jwt_identity()
-        logging.debug(f"JWT identity: {identity}")
         deliveries = Delivery.query.all()
         result = []
         for delivery in deliveries:
@@ -54,13 +48,14 @@ def get_deliveries():
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
 @bp.route('/<delivery_id>', methods=['PUT'])
-@jwt_required()
 def update_delivery(delivery_id):
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
-        identity = get_jwt_identity()
-        logging.debug(f"JWT identity: {identity}")
-        delivery = Delivery.query.get(delivery_id)
+        try:
+            delivery_uuid = uuid.UUID(delivery_id)
+        except Exception:
+            return jsonify({"message": "Invalid delivery ID format"}), 400
+        delivery = Delivery.query.get(delivery_uuid)
         if not delivery:
             return jsonify({"message": "Delivery not found"}), 404
         data = request.get_json(force=True, silent=True)
@@ -75,13 +70,14 @@ def update_delivery(delivery_id):
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
 @bp.route('/<delivery_id>', methods=['DELETE'])
-@jwt_required()
 def delete_delivery(delivery_id):
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
-        identity = get_jwt_identity()
-        logging.debug(f"JWT identity: {identity}")
-        delivery = Delivery.query.get(delivery_id)
+        try:
+            delivery_uuid = uuid.UUID(delivery_id)
+        except Exception:
+            return jsonify({"message": "Invalid delivery ID format"}), 400
+        delivery = Delivery.query.get(delivery_uuid)
         if not delivery:
             return jsonify({"message": "Delivery not found"}), 404
         db.session.delete(delivery)

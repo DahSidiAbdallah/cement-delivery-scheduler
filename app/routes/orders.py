@@ -1,18 +1,15 @@
 from flask import Blueprint, request, jsonify
 from app.models import Order, Client, Product
 from app.extensions import db
-from flask_jwt_extended import jwt_required, get_jwt_identity
 import logging
+import uuid
 
 bp = Blueprint('orders', __name__, url_prefix='/orders')
 
 @bp.route('/', methods=['POST'])
-@jwt_required()
 def create_order():
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
-        identity = get_jwt_identity()
-        logging.debug(f"JWT identity: {identity}")
         data = request.get_json(force=True, silent=True)
         logging.debug(f"Received data: {data}")
         new_order = Order(
@@ -32,12 +29,9 @@ def create_order():
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
 @bp.route('/', methods=['GET'])
-@jwt_required()
 def get_orders():
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
-        identity = get_jwt_identity()
-        logging.debug(f"JWT identity: {identity}")
         orders = Order.query.all()
         result = []
         for order in orders:
@@ -56,13 +50,14 @@ def get_orders():
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
 @bp.route('/<order_id>', methods=['PUT'])
-@jwt_required()
 def update_order(order_id):
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
-        identity = get_jwt_identity()
-        logging.debug(f"JWT identity: {identity}")
-        order = Order.query.get(order_id)
+        try:
+            order_uuid = uuid.UUID(order_id)
+        except Exception:
+            return jsonify({"message": "Invalid order ID format"}), 400
+        order = Order.query.get(order_uuid)
         if not order:
             return jsonify({"message": "Order not found"}), 404
         data = request.get_json(force=True, silent=True)
@@ -78,13 +73,14 @@ def update_order(order_id):
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
 @bp.route('/<order_id>', methods=['DELETE'])
-@jwt_required()
 def delete_order(order_id):
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
-        identity = get_jwt_identity()
-        logging.debug(f"JWT identity: {identity}")
-        order = Order.query.get(order_id)
+        try:
+            order_uuid = uuid.UUID(order_id)
+        except Exception:
+            return jsonify({"message": "Invalid order ID format"}), 400
+        order = Order.query.get(order_uuid)
         if not order:
             return jsonify({"message": "Order not found"}), 404
         db.session.delete(order)
