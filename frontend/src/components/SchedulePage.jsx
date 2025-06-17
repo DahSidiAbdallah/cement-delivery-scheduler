@@ -60,19 +60,17 @@ export default function SchedulePage() {
   const renderDeliveries = (orderIds) => {
     // Build array of enriched deliveries for this truck
     const deliveries = orderIds.map((orderId, idx) => {
-      const order   = orders.find(o => o.id === orderId);
-      const client  = clients.find(c => c.id === order?.client_id);
+      const order = orders.find(o => o.id === orderId);
+      const client = clients.find(c => c.id === order?.client_id);
       const product = products.find(p => p.id === order?.product_id);
       return {
         idx,
-        clientName:    client ? client.name : orderId,
-        quantity:      order?.quantity,
+        clientName: client ? client.name : orderId,
+        quantity: order?.quantity,
         requestedDate: order?.requested_date,
         requestedTime: order?.requested_time?.slice(0,5) || '-', // "HH:MM"
-        product:       product
-                         ? `${product.name} (${product.type})`
-                         : '',
-        orderObj:      order
+        product: product ? product.name : '',
+        orderObj: order
       };
     });
 
@@ -128,6 +126,7 @@ export default function SchedulePage() {
               <TableBody>
                 {schedule.map((item, idx) => {
                   const deliveries = renderDeliveries(item.orders);
+                  // Separate row for each delivery, but only show truck for the first row
                   return deliveries.length === 0 ? (
                     <TableRow key={idx}>
                       <TableCell>{getTruckPlate(item.truck)}</TableCell>
