@@ -87,32 +87,52 @@ def get_deliveries():
         logging.exception("Exception occurred while getting deliveries")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/<delivery_id>', methods=['PUT', 'OPTIONS'])
+@bp.route('/<delivery_id>', methods=['PUT'])
 @jwt_required()
 def update_delivery(delivery_id):
-    if request.method == 'OPTIONS':
-        return '', 200
     try:
-        logging.debug(f"Request headers: {dict(request.headers)}")
-        identity = get_jwt_identity()
-        logging.debug(f"JWT identity: {identity}")
         try:
             delivery_uuid = uuid.UUID(delivery_id)
         except Exception:
-            return jsonify({"message": "Invalid delivery ID format"}), 400
+            return jsonify({"error": "Invalid delivery ID format"}), 400
+
         delivery = Delivery.query.get(delivery_uuid)
         if not delivery:
-            return jsonify({"message": "Delivery not found"}), 404
+            return jsonify({'error': 'Delivery not found'}), 404
+
         data = request.get_json(force=True, silent=True)
-        delivery.scheduled_date = data.get('scheduled_date', delivery.scheduled_date)
-        delivery.scheduled_time = data.get('scheduled_time', delivery.scheduled_time)
-        delivery.status = data.get('status', delivery.status)
+        # ... rest of your parsing logic unchanged ...
+        if 'scheduled_date' in data:
+            if not data['scheduled_date']:
+                delivery.scheduled_date = None
+            elif isinstance(data['scheduled_date'], str):
+                delivery.scheduled_date = datetime.strptime(data['scheduled_date'], '%Y-%m-%d').date()
+            else:
+                delivery.scheduled_date = data['scheduled_date']
+
+        if 'scheduled_time' in data:
+            if not data['scheduled_time']:
+                delivery.scheduled_time = None
+            elif isinstance(data['scheduled_time'], str):
+                fmt = '%H:%M:%S' if len(data['scheduled_time']) == 8 else '%H:%M'
+                delivery.scheduled_time = datetime.strptime(data['scheduled_time'], fmt).time()
+            else:
+                delivery.scheduled_time = data['scheduled_time']
+
+        if 'order_id' in data and data['order_id']:
+            delivery.order_id = uuid.UUID(data['order_id'])
+        if 'truck_id' in data and data['truck_id']:
+            delivery.truck_id = uuid.UUID(data['truck_id'])
+        if 'status' in data:
+            delivery.status = data['status']
+
         db.session.commit()
-        logging.info(f"Delivery updated with ID: {delivery.id}")
-        return jsonify({"message": "Delivery updated"}), 200
+        return jsonify({'message': 'Delivery updated'}), 200
+
     except Exception as e:
-        logging.exception("Exception occurred while updating delivery")
+        print(e)
         return jsonify({"error": "Server error", "details": str(e)}), 500
+
 
 @bp.route('/<delivery_id>', methods=['DELETE', 'OPTIONS'])
 @jwt_required()

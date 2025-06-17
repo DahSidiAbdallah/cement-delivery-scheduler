@@ -7,7 +7,7 @@ import io, pandas as pd
 bp = Blueprint('schedule', __name__, url_prefix='/schedule')
 bp.strict_slashes = False
 
-@bp.route('', methods=['GET'])
+@bp.route('/deliveries', methods=['GET'])
 @jwt_required()
 def get_schedule():
     # 1) Fetch pending orders and all trucks
@@ -34,7 +34,7 @@ def get_schedule():
     return jsonify({'schedule': result}), 200
 
 
-@bp.route('', methods=['GET'])
+@bp.route('/export', methods=['GET'])
 @jwt_required()
 def export_schedule():
     # Same data collection as above
