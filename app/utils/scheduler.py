@@ -7,10 +7,19 @@ def optimize_schedule(orders, trucks, daily_limit):
     trucks: list of dicts, each {'id': str, 'capacity': float}
     daily_limit: float
     """
+    SCALE = 100  # Supports up to 2 decimal places of tons
+
     model = cp_model.CpModel()
 
     num_orders = len(orders)
     num_trucks = len(trucks)
+
+    # Convert all floats to ints for ortools
+    for o in orders:
+        o['quantity_int'] = int(round(o['quantity'] * SCALE))
+    for t in trucks:
+        t['capacity_int'] = int(round(t['capacity'] * SCALE))
+    daily_limit_int = int(round(daily_limit * SCALE))
 
     # Decision vars: x[i,j] = 1 if order i assigned to truck j
     x = {}
@@ -22,17 +31,17 @@ def optimize_schedule(orders, trucks, daily_limit):
     for i in range(num_orders):
         model.Add(sum(x[(i,j)] for j in range(num_trucks)) == 1)
 
-    # 2) Respect each truck’s capacity
+    # 2) Respect each truck’s capacity (integer tons)
     for j in range(num_trucks):
         model.Add(
-            sum(x[(i,j)] * orders[i]['quantity'] for i in range(num_orders))
-            <= trucks[j]['capacity']
+            sum(x[(i,j)] * orders[i]['quantity_int'] for i in range(num_orders))
+            <= trucks[j]['capacity_int']
         )
 
     # 3) Don’t exceed daily production limit
     model.Add(
-        sum(orders[i]['quantity'] for i in range(num_orders))
-        <= daily_limit
+        sum(orders[i]['quantity_int'] for i in range(num_orders))
+        <= daily_limit_int
     )
 
     # 4) Maximize total priority served
@@ -54,11 +63,14 @@ def optimize_schedule(orders, trucks, daily_limit):
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         for j, truck in enumerate(trucks):
             assigned = []
+            load_int = 0
             for i, order in enumerate(orders):
                 if solver.Value(x[(i,j)]) == 1:
                     assigned.append(order['id'])
+                    load_int += order['quantity_int']
             result.append({
                 'truck':  truck['id'],
-                'orders': assigned
+                'orders': assigned,
+                'load': load_int / SCALE  # Convert back to float tons
             })
     return result

@@ -5,8 +5,11 @@ from app.models import Client
 from app.extensions import db
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
+
+
 bp = Blueprint('clients', __name__, url_prefix='/clients')
 bp.strict_slashes = False
+
 
 def log_headers():
     logging.debug("\n=== Incoming Request Headers ===")

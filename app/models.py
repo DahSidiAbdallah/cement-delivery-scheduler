@@ -34,6 +34,7 @@ class Order(db.Model):
     requested_date = db.Column(db.Date, nullable=False)
     requested_time = db.Column(db.Time)
     status = db.Column(db.String(20), nullable=False, default="Pending")
+    client = db.relationship('Client', backref='orders')  # <--- add this line!
 
 class Delivery(db.Model):
     __tablename__ = 'deliveries'
