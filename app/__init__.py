@@ -1,7 +1,7 @@
 from flask import Flask
 from flask_cors import CORS
 from .extensions import db, migrate, jwt
-from .routes import clients, products, trucks, orders, deliveries, users, auth, schedule
+from .routes import clients, products, trucks, orders, deliveries, users, auth, schedule, whatsapp
 
 def create_app():
     app = Flask(__name__)
@@ -29,5 +29,6 @@ def create_app():
     app.register_blueprint(users.bp)
     app.register_blueprint(auth.bp)
     app.register_blueprint(schedule.bp)
+    app.register_blueprint(whatsapp.bp)
 
     return app
