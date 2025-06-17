@@ -12,9 +12,10 @@ def create_app():
     # ——————————————————————————————————————
     CORS(
         app,
-        resources={r"/*": {"origins": "http://localhost:5173"}},
+        resources={"*": {"origins": ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:3000"]}},
         supports_credentials=True,
-        allow_headers=["Content-Type", "Authorization"]  # Explicitly allow Authorization header
+        allow_headers=["Content-Type", "Authorization"],  # Explicitly allow Authorization header
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
     )
 
     db.init_app(app)

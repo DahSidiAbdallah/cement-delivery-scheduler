@@ -5,8 +5,19 @@ import api from '../services/api';
 import {
   Box, Button, Typography, Paper, Snackbar, Alert,
   Table, TableHead, TableRow, TableCell, TableBody, TableContainer,
-  Select, MenuItem, FormControl, InputLabel
+  Select, MenuItem, FormControl, InputLabel, CircularProgress, IconButton
 } from '@mui/material';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import Loading from './Loading';
+
+const tableStyles = {
+  head: { background: "#F7F9FA" },
+  row: {
+    "&:nth-of-type(odd)": { background: "#FAFAFA" },
+    "&:hover": { background: "#f0f4f9" }
+  },
+  cellBold: { fontWeight: "bold" }
+};
 
 export default function SchedulePage() {
   const [schedule, setSchedule] = useState([]);
@@ -15,38 +26,95 @@ export default function SchedulePage() {
   const [clients, setClients] = useState([]);
   const [products, setProducts] = useState([]);
   const [snackbar, setSnackbar] = useState(null);
-  const [sortBy, setSortBy] = useState('order'); // Sort deliveries by order (default), time, or client
+  const [sortBy, setSortBy] = useState('order');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [loadingError, setLoadingError] = useState(null);
 
-  // Fetch reference data on mount
+  // Load all reference data
+  const loadData = async () => {
+    setIsLoading(true);
+    setLoadingError(null);
+    try {
+      const [trucksRes, ordersRes, clientsRes, productsRes] = await Promise.all([
+        api.get('/trucks'),
+        api.get('/orders'),
+        api.get('/clients'),
+        api.get('/products')
+      ]);
+      setTrucks(trucksRes.data);
+      setOrders(ordersRes.data);
+      setClients(clientsRes.data);
+      setProducts(productsRes.data);
+    } catch (error) {
+      console.error('Error loading data:', error);
+      setLoadingError(error.message || 'Failed to load data');
+      setSnackbar({ 
+        message: 'Erreur lors du chargement des données', 
+        severity: 'error',
+        autoHideDuration: 5000
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    api.get('/trucks').then(r => setTrucks(r.data));
-    api.get('/orders').then(r => setOrders(r.data));
-    api.get('/clients').then(r => setClients(r.data));
-    api.get('/products').then(r => setProducts(r.data));
+    loadData();
   }, []);
 
   // Generate schedule
   const generate = async () => {
+    setIsGenerating(true);
     try {
       const res = await api.get('/schedule/deliveries');
       if (res.data.schedule) {
         setSchedule(res.data.schedule);
-        setSnackbar({ message: 'Planning généré', severity: 'success' });
+        setSnackbar({ 
+          message: 'Planning généré avec succès', 
+          severity: 'success',
+          autoHideDuration: 3000
+        });
       } else {
-        setSnackbar({ message: 'Format de réponse inattendu', severity: 'warning' });
+        setSnackbar({ 
+          message: 'Format de réponse inattendu du serveur', 
+          severity: 'warning',
+          autoHideDuration: 5000
+        });
       }
     } catch (err) {
-      setSnackbar({ message: err.response?.data?.message || err.message || 'Erreur inconnue', severity: 'error' });
+      console.error('Error generating schedule:', err);
+      setSnackbar({ 
+        message: `Erreur lors de la génération du planning: ${err.response?.data?.message || err.message || 'Erreur inconnue'}`, 
+        severity: 'error',
+        autoHideDuration: 5000
+      });
+    } finally {
+      setIsGenerating(false);
     }
   };
 
   // Export to Excel
   const exportExcel = async () => {
+    setIsExporting(true);
     try {
       const res = await api.get('/schedule/export', { responseType: 'blob' });
-      saveAs(res.data, 'planning_livraisons.xlsx');
+      saveAs(res.data, `planning_livraisons_${new Date().toISOString().split('T')[0]}.xlsx`);
+      setSnackbar({ 
+        message: 'Export Excel réussi', 
+        severity: 'success',
+        autoHideDuration: 3000
+      });
     } catch (err) {
-      setSnackbar({ message: 'Erreur lors de l\'export Excel', severity: 'error' });
+      console.error('Error exporting to Excel:', err);
+      setSnackbar({ 
+        message: `Erreur lors de l'export Excel: ${err.response?.data?.message || err.message || 'Erreur inconnue'}`,
+        severity: 'error',
+        autoHideDuration: 5000
+      });
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -85,42 +153,99 @@ export default function SchedulePage() {
     return deliveries;
   };
 
+  // Show loading state
+  if (isLoading && schedule.length === 0) {
+    return <Loading message="Chargement des données..." />;
+  }
+
+  // Show error state
+  if (loadingError) {
+    return (
+      <Box p={3} textAlign="center">
+        <Typography color="error" gutterBottom>
+          Erreur de chargement
+        </Typography>
+        <Typography color="textSecondary" paragraph>
+          {loadingError}
+        </Typography>
+        <Button 
+          variant="outlined" 
+          color="primary" 
+          onClick={loadData}
+          startIcon={<RefreshIcon />}
+        >
+          Réessayer
+        </Button>
+      </Box>
+    );
+  }
+
   return (
-    <Box>
-      <Typography variant="h4" gutterBottom>Planning des livraisons</Typography>
-      <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-        <Button variant="contained" onClick={generate}>Générer le planning</Button>
-        <Button variant="outlined" onClick={exportExcel}>Exporter en Excel</Button>
-        <FormControl size="small" sx={{ minWidth: 120 }}>
-          <InputLabel id="sort-by-label">Trier par</InputLabel>
+    <Box p={3}>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+        <Typography variant="h4">Planning des livraisons</Typography>
+        <Box display="flex" gap={2}>
+          <IconButton 
+            onClick={loadData} 
+            color="primary"
+            disabled={isLoading}
+            title="Rafraîchir les données"
+          >
+            <RefreshIcon />
+          </IconButton>
+          <Button 
+            variant="contained" 
+            color="primary" 
+            onClick={generate}
+            disabled={isLoading || isGenerating}
+            startIcon={isGenerating ? <CircularProgress size={20} color="inherit" /> : null}
+          >
+            {isGenerating ? 'Génération...' : 'Générer le planning'}
+          </Button>
+          <Button 
+            variant="outlined" 
+            onClick={exportExcel} 
+            disabled={isLoading || isExporting || schedule.length === 0}
+            startIcon={isExporting ? <CircularProgress size={20} color="inherit" /> : null}
+          >
+            {isExporting ? 'Export en cours...' : 'Exporter en Excel'}
+          </Button>
+        </Box>
+      </Box>
+
+      <Box mb={3} display="flex" justifyContent="space-between" alignItems="center">
+        <FormControl variant="outlined" size="small" sx={{ minWidth: 200 }} disabled={isLoading}>
+          <InputLabel>Trier par</InputLabel>
           <Select
-            labelId="sort-by-label"
             value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
             label="Trier par"
-            onChange={e => setSortBy(e.target.value)}
           >
             <MenuItem value="order">Ordre d'affectation</MenuItem>
-            <MenuItem value="time">Heure</MenuItem>
+            <MenuItem value="time">Heure de livraison</MenuItem>
             <MenuItem value="client">Client</MenuItem>
           </Select>
         </FormControl>
+        <Typography color="textSecondary" variant="body2">
+          {schedule.length} livraison{schedule.length !== 1 ? 's' : ''} planifiée{schedule.length !== 1 ? 's' : ''}
+        </Typography>
       </Box>
 
       {/* Pretty planning table */}
       {schedule.length > 0 && (
-        <Paper sx={{ mt: 3, p: 2 }}>
+        <Paper sx={{ mt: 3, p: 2, borderRadius: 2, boxShadow: 2 }}>
           <Typography variant="h6" sx={{ mb: 2 }}>Affectations par camion</Typography>
           <TableContainer>
             <Table>
-              <TableHead>
+              <TableHead style={tableStyles.head}>
                 <TableRow>
-                  <TableCell><b>Camion</b></TableCell>
-                  <TableCell><b>#</b></TableCell>
-                  <TableCell><b>Client</b></TableCell>
-                  <TableCell><b>Quantité (t)</b></TableCell>
-                  <TableCell><b>Date</b></TableCell>
-                  <TableCell><b>Heure</b></TableCell>
-                  <TableCell><b>Produit</b></TableCell>
+                  <TableCell style={tableStyles.cellBold}>Camion</TableCell>
+                  <TableCell style={tableStyles.cellBold}>#</TableCell>
+                  <TableCell style={tableStyles.cellBold}>Client</TableCell>
+                  <TableCell style={tableStyles.cellBold}>Quantité (t)</TableCell>
+                  <TableCell style={tableStyles.cellBold}>Date</TableCell>
+                  <TableCell style={tableStyles.cellBold}>Heure</TableCell>
+                  <TableCell style={tableStyles.cellBold}>Produit</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -133,9 +258,9 @@ export default function SchedulePage() {
                       <TableCell colSpan={6} align="center">Aucune livraison</TableCell>
                     </TableRow>
                   ) : deliveries.map((d, i) => (
-                    <TableRow key={i}>
+                    <TableRow key={i} style={tableStyles.row}>
                       {i === 0 ? (
-                        <TableCell rowSpan={deliveries.length} sx={{ verticalAlign: 'top', fontWeight: 600 }}>
+                        <TableCell rowSpan={deliveries.length} style={{ verticalAlign: 'top', fontWeight: 600 }}>
                           {getTruckPlate(item.truck)}
                         </TableCell>
                       ) : null}
@@ -156,19 +281,18 @@ export default function SchedulePage() {
 
       <Snackbar
         open={!!snackbar}
-        autoHideDuration={4000}
+        autoHideDuration={snackbar?.autoHideDuration || 3000}
         onClose={() => setSnackbar(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
       >
-        {snackbar && (
-          <Alert
-            onClose={() => setSnackbar(null)}
-            severity={snackbar.severity}
-            sx={{ width: '100%' }}
-          >
-            {snackbar.message}
-          </Alert>
-        )}
+        <Alert 
+          onClose={() => setSnackbar(null)} 
+          severity={snackbar?.severity} 
+          sx={{ width: '100%' }}
+          variant="filled"
+        >
+          {snackbar?.message}
+        </Alert>
       </Snackbar>
     </Box>
   );
