@@ -18,7 +18,6 @@ export default function DeliveriesPage() {
   const [orders, setOrders] = useState([]);
   const [trucks, setTrucks] = useState([]);
   const [clients, setClients] = useState([]);
-  const [products, setProducts] = useState([]); // ← NEW
 
   const [orderId, setOrderId] = useState('');
   const [truckId, setTruckId] = useState('');
@@ -33,18 +32,10 @@ export default function DeliveriesPage() {
 
   // Fetch all data
   const load = () => api.get('/deliveries').then(r => setDeliveries(r.data));
-  const loadOrders   = () => api.get('/orders').then(r => setOrders(r.data));
-  const loadTrucks   = () => api.get('/trucks').then(r => setTrucks(r.data));
-  const loadClients  = () => api.get('/clients').then(r => setClients(r.data));
-  const loadProducts = () => api.get('/products').then(r => setProducts(r.data)); // ← NEW
-
-  useEffect(() => {
-    load();
-    loadOrders();
-    loadTrucks();
-    loadClients();
-    loadProducts(); // ← NEW
-  }, []);
+  const loadOrders = () => api.get('/orders').then(r => setOrders(r.data));
+  const loadTrucks = () => api.get('/trucks').then(r => setTrucks(r.data));
+  const loadClients = () => api.get('/clients').then(r => setClients(r.data));
+  useEffect(() => { load(); loadOrders(); loadTrucks(); loadClients(); }, []);
 
   // Add delivery
   const handleAdd = async () => {
@@ -120,22 +111,18 @@ export default function DeliveriesPage() {
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2 }}>
         <Select
           value={orderId} onChange={e => setOrderId(e.target.value)}
-          displayEmpty sx={{ minWidth: 220 }}
+          displayEmpty sx={{ minWidth: 180 }}
         >
           <MenuItem value="">-- Commande --</MenuItem>
           {orders.map(o => {
-            const client  = clients.find(c => c.id === o.client_id);
-            const product = products.find(p => p.id === o.product_id); // ← NEW
+            const client = clients.find(c => c.id === o.client_id);
             return (
               <MenuItem key={o.id} value={o.id}>
-                {client && product
-                  ? `${client.name} (${o.quantity}t ${product.type}, ${o.requested_date})`
-                  : o.id}
+                {client ? `${client.name} (${o.quantity}t, ${o.requested_date})` : o.id}
               </MenuItem>
             );
           })}
         </Select>
-
         <Select
           value={truckId} onChange={e => setTruckId(e.target.value)}
           displayEmpty sx={{ minWidth: 160 }}
@@ -145,7 +132,6 @@ export default function DeliveriesPage() {
             <MenuItem key={t.id} value={t.id}>{t.plate_number}</MenuItem>
           ))}
         </Select>
-
         <TextField
           label="Date" type="date"
           value={date} onChange={e => setDate(e.target.value)}
@@ -176,14 +162,15 @@ export default function DeliveriesPage() {
               {deliveries.map(d => (
                 <TableRow key={d.id}>
                   <TableCell>
-                    {(() => {
-                      const order   = orders.find(o => o.id === d.order_id);
-                      const client  = clients.find(c => c.id === order?.client_id);
-                      const product = products.find(p => p.id === order?.product_id); // ← NEW
-                      return (client && order && product)
-                        ? `${client.name} (${order.quantity}t ${product.type}, ${order.requested_date})`
-                        : d.order_id;
-                    })()}
+                    {
+                      (() => {
+                        const order = orders.find(o => o.id === d.order_id);
+                        const client = clients.find(c => c.id === order?.client_id);
+                        return order && client
+                          ? `${client.name} (${order.quantity}t, ${order.requested_date})`
+                          : d.order_id;
+                      })()
+                    }
                   </TableCell>
                   <TableCell>
                     {trucks.find(t => t.id === d.truck_id)?.plate_number || d.truck_id}
@@ -237,18 +224,14 @@ export default function DeliveriesPage() {
             fullWidth sx={{ mb: 2 }}
           >
             {orders.map(o => {
-              const client  = clients.find(c => c.id === o.client_id);
-              const product = products.find(p => p.id === o.product_id); // ← NEW
+              const client = clients.find(c => c.id === o.client_id);
               return (
                 <MenuItem key={o.id} value={o.id}>
-                  {client && product
-                    ? `${client.name} (${o.quantity}t ${product.type}, ${o.requested_date})`
-                    : o.id}
+                  {client ? `${client.name} (${o.quantity}t, ${o.requested_date})` : o.id}
                 </MenuItem>
               );
             })}
           </Select>
-
           <Select
             label="Camion"
             value={editData.truck_id}
