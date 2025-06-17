@@ -1,7 +1,7 @@
 import logging
 import uuid
 from flask import Blueprint, request, jsonify
-from app.models import Delivery
+from app.models import Delivery, DeliveryOrder, Order, Truck
 from app.extensions import db
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime
@@ -21,12 +21,26 @@ def create_delivery():
         data = request.get_json(force=True, silent=True)
         logging.debug(f"Received data: {data}")
         
-        # Convert order_id and truck_id from string to UUID
-        if 'order_id' in data and isinstance(data['order_id'], str):
-            try:
-                data['order_id'] = uuid.UUID(data['order_id'])
-            except Exception:
-                return jsonify({"error": "Invalid order_id UUID"}), 400
+        # Accept either a single order_id or a list of order_ids
+        order_ids = []
+        if 'order_ids' in data:
+            order_ids = data['order_ids']
+        elif 'order_id' in data:
+            order_ids = [data['order_id']]
+        else:
+            return jsonify({"error": "order_ids required"}), 400
+
+        conv_ids = []
+        for oid in order_ids:
+            if isinstance(oid, str):
+                try:
+                    conv_ids.append(uuid.UUID(oid))
+                except Exception:
+                    return jsonify({"error": f"Invalid order_id {oid}"}), 400
+            else:
+                conv_ids.append(oid)
+        order_ids = conv_ids
+
         if 'truck_id' in data and isinstance(data['truck_id'], str):
             try:
                 data['truck_id'] = uuid.UUID(data['truck_id'])
@@ -47,14 +61,54 @@ def create_delivery():
             except Exception:
                 return jsonify({"error": "Invalid time format, should be HH:MM"}), 400
         
+        # ===== Business validations =====
+        # 1. Orders must not already be scheduled
+        for oid in order_ids:
+            existing = DeliveryOrder.query.filter_by(order_id=oid).first()
+            if existing:
+                return jsonify({"error": "Order already scheduled"}), 400
+            if Delivery.query.filter_by(order_id=oid).first():
+                return jsonify({"error": "Order already scheduled"}), 400
+
+        # 2. Date/time must be in the future
+        if data.get('scheduled_date'):
+            sched_dt = datetime.combine(
+                data['scheduled_date'],
+                data.get('scheduled_time') or datetime.min.time()
+            )
+            if sched_dt <= datetime.now():
+                return jsonify({"error": "Delivery must be in the future"}), 400
+
+        # 3. Truck/time slot must be free
+        existing_deliv = Delivery.query.filter_by(
+            truck_id=data['truck_id'],
+            scheduled_date=data.get('scheduled_date'),
+            scheduled_time=data.get('scheduled_time')
+        ).first()
+        if existing_deliv:
+            return jsonify({"error": "Truck already booked for this time"}), 400
+
+        # 4. Respect truck capacity
+        truck = Truck.query.get(data['truck_id'])
+        total_qty = 0
+        for oid in order_ids:
+            order = Order.query.get(oid)
+            if not order:
+                return jsonify({"error": f"Order {oid} not found"}), 400
+            total_qty += order.quantity
+        if truck and truck.capacity and total_qty > truck.capacity:
+            return jsonify({"error": "Truck capacity exceeded"}), 400
+
         new_delivery = Delivery(
-            order_id=data['order_id'],
             truck_id=data['truck_id'],
             scheduled_date=data.get('scheduled_date'),
             scheduled_time=data.get('scheduled_time'),
             status=data.get('status', 'Programmé')
         )
         db.session.add(new_delivery)
+        db.session.flush()
+        for oid in order_ids:
+            db.session.add(DeliveryOrder(delivery_id=new_delivery.id, order_id=oid))
         db.session.commit()
         logging.info(f"Delivery created with ID: {new_delivery.id}")
         return jsonify({"message": "Delivery created", "delivery_id": str(new_delivery.id)}), 201
@@ -74,9 +128,12 @@ def get_deliveries():
         deliveries = Delivery.query.all()
         result = []
         for delivery in deliveries:
+            order_ids = [str(o.id) for o in delivery.orders]
+            if delivery.order_id:
+                order_ids.append(str(delivery.order_id))
             result.append({
                 "id": str(delivery.id),
-                "order_id": str(delivery.order_id),
+                "order_ids": order_ids,
                 "truck_id": str(delivery.truck_id),
                 "scheduled_date": delivery.scheduled_date.isoformat() if delivery.scheduled_date else None,
                 "scheduled_time": str(delivery.scheduled_time) if delivery.scheduled_time else None,
@@ -101,7 +158,13 @@ def update_delivery(delivery_id):
             return jsonify({'error': 'Delivery not found'}), 404
 
         data = request.get_json(force=True, silent=True)
-        # ... rest of your parsing logic unchanged ...
+
+        order_ids = None
+        if 'order_ids' in data:
+            order_ids = data['order_ids']
+        elif 'order_id' in data:
+            order_ids = [data['order_id']]
+
         if 'scheduled_date' in data:
             if not data['scheduled_date']:
                 delivery.scheduled_date = None
@@ -119,10 +182,55 @@ def update_delivery(delivery_id):
             else:
                 delivery.scheduled_time = data['scheduled_time']
 
-        if 'order_id' in data and data['order_id']:
-            delivery.order_id = uuid.UUID(data['order_id'])
+        if order_ids is not None:
+            conv = []
+            for oid in order_ids:
+                if isinstance(oid, str):
+                    conv.append(uuid.UUID(oid))
+                else:
+                    conv.append(oid)
+
+            # check duplicates
+            for oid in conv:
+                existing = DeliveryOrder.query.filter_by(order_id=oid).first()
+                if existing and existing.delivery_id != delivery.id:
+                    return jsonify({"error": "Order already scheduled"}), 400
+                if Delivery.query.filter(Delivery.order_id==oid, Delivery.id!=delivery.id).first():
+                    return jsonify({"error": "Order already scheduled"}), 400
+
+            # truck capacity validation
+            truck = Truck.query.get(data.get('truck_id', delivery.truck_id))
+            total = 0
+            for oid in conv:
+                order = Order.query.get(oid)
+                if not order:
+                    return jsonify({"error": f"Order {oid} not found"}), 400
+                total += order.quantity
+            if truck and truck.capacity and total > truck.capacity:
+                return jsonify({"error": "Truck capacity exceeded"}), 400
+
+            # replace associations
+            DeliveryOrder.query.filter_by(delivery_id=delivery.id).delete()
+            for oid in conv:
+                db.session.add(DeliveryOrder(delivery_id=delivery.id, order_id=oid))
+            delivery.order_id = None
         if 'truck_id' in data and data['truck_id']:
             delivery.truck_id = uuid.UUID(data['truck_id'])
+
+        # check future time and slot availability if truck/time updated
+        check_date = delivery.scheduled_date
+        check_time = delivery.scheduled_time
+        if check_date and datetime.combine(check_date, check_time or datetime.min.time()) <= datetime.now():
+            return jsonify({"error": "Delivery must be in the future"}), 400
+
+        existing_same = Delivery.query.filter(
+            Delivery.id != delivery.id,
+            Delivery.truck_id == delivery.truck_id,
+            Delivery.scheduled_date == check_date,
+            Delivery.scheduled_time == check_time
+        ).first()
+        if existing_same:
+            return jsonify({"error": "Truck already booked for this time"}), 400
         if 'status' in data:
             delivery.status = data['status']
 
@@ -150,6 +258,7 @@ def delete_delivery(delivery_id):
         delivery = Delivery.query.get(delivery_uuid)
         if not delivery:
             return jsonify({"message": "Delivery not found"}), 404
+        DeliveryOrder.query.filter_by(delivery_id=delivery.id).delete()
         db.session.delete(delivery)
         db.session.commit()
         logging.info(f"Delivery deleted with ID: {delivery.id}")
