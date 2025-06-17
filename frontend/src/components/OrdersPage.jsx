@@ -183,7 +183,10 @@ export default function OrdersPage() {
   {clients.find(c => c.id === o.client_id)?.name || o.client_id}
 </TableCell>
 <TableCell>
-  {products.find(p => p.id === o.product_id)?.name || o.product_id}
+  {(() => {
+    const product = products.find(p => p.id === o.product_id);
+    return product ? `${product.name}${product.type ? ` (${product.type})` : ''}` : o.product_id;
+  })()}
 </TableCell>
                   <TableCell>{o.quantity}</TableCell>
                   <TableCell>{o.requested_date}</TableCell>

@@ -18,6 +18,7 @@ export default function DeliveriesPage() {
   const [orders, setOrders] = useState([]);
   const [trucks, setTrucks] = useState([]);
   const [clients, setClients] = useState([]);
+  const [products, setProducts] = useState([]);
 
   const [orderId, setOrderId] = useState('');
   const [truckId, setTruckId] = useState('');
@@ -35,7 +36,15 @@ export default function DeliveriesPage() {
   const loadOrders = () => api.get('/orders').then(r => setOrders(r.data));
   const loadTrucks = () => api.get('/trucks').then(r => setTrucks(r.data));
   const loadClients = () => api.get('/clients').then(r => setClients(r.data));
-  useEffect(() => { load(); loadOrders(); loadTrucks(); loadClients(); }, []);
+  const loadProducts = () => api.get('/products').then(r => setProducts(r.data));
+  
+  useEffect(() => { 
+    load(); 
+    loadOrders(); 
+    loadTrucks(); 
+    loadClients();
+    loadProducts();
+  }, []);
 
   // Add delivery
   const handleAdd = async () => {
@@ -166,8 +175,9 @@ export default function DeliveriesPage() {
                       (() => {
                         const order = orders.find(o => o.id === d.order_id);
                         const client = clients.find(c => c.id === order?.client_id);
-                        return order && client
-                          ? `${client.name} (${order.quantity}t, ${order.requested_date})`
+                        const product = products.find(p => p.id === order?.product_id);
+                        return order && client && product
+                          ? `${client.name} - ${product.name}${product.type ? ` (${product.type})` : ''} (${order.quantity}t, ${order.requested_date})`
                           : d.order_id;
                       })()
                     }

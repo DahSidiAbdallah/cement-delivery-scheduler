@@ -69,7 +69,7 @@ export default function SchedulePage() {
         quantity: order?.quantity,
         requestedDate: order?.requested_date,
         requestedTime: order?.requested_time?.slice(0,5) || '-', // "HH:MM"
-        product: product ? product.name : '',
+        product: product ? `${product.name}${product.type ? ` (${product.type})` : ''}` : '',
         orderObj: order
       };
     });
