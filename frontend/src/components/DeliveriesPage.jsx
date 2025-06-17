@@ -20,7 +20,7 @@ export default function DeliveriesPage() {
   const [clients, setClients] = useState([]);
   const [products, setProducts] = useState([]);
 
-  const [orderId, setOrderId] = useState('');
+  const [orderIds, setOrderIds] = useState([]);
   const [truckId, setTruckId] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
@@ -28,7 +28,7 @@ export default function DeliveriesPage() {
   const [deleteId, setDeleteId] = useState(null);
   const [editId, setEditId] = useState(null);
   const [editData, setEditData] = useState({
-    order_id: '', truck_id: '', scheduled_date: '', scheduled_time: '', status: ''
+    order_ids: [], truck_id: '', scheduled_date: '', scheduled_time: '', status: ''
   });
 
   // Fetch all data
@@ -48,22 +48,29 @@ export default function DeliveriesPage() {
 
   // Add delivery
   const handleAdd = async () => {
-    if (!orderId || !truckId || !date) {
+    if (orderIds.length === 0 || !truckId || !date) {
       setSnackbar({ message: 'Tous les champs obligatoires doivent être remplis', severity: 'error' });
+      return;
+    }
+    const when = new Date(`${date}T${time || '00:00'}`);
+    if (when <= new Date()) {
+      setSnackbar({ message: 'La date doit être dans le futur', severity: 'error' });
       return;
     }
     try {
       await api.post('/deliveries', {
-        order_id: orderId,
+        order_ids: orderIds,
         truck_id: truckId,
         scheduled_date: date,
         scheduled_time: time || undefined
       });
       setDate(''); setTime('');
+      setOrderIds([]);
       load();
       setSnackbar({ message: 'Livraison ajoutée', severity: 'success' });
-    } catch {
-      setSnackbar({ message: 'Erreur lors de l\'ajout de la livraison', severity: 'error' });
+    } catch (e) {
+      const msg = e?.response?.data?.error || "Erreur lors de l'ajout de la livraison";
+      setSnackbar({ message: msg, severity: 'error' });
     }
   };
 
@@ -83,7 +90,7 @@ export default function DeliveriesPage() {
   const handleEditOpen = (delivery) => {
     setEditId(delivery.id);
     setEditData({
-      order_id: delivery.order_id,
+      order_ids: delivery.order_ids || [],
       truck_id: delivery.truck_id,
       scheduled_date: delivery.scheduled_date,
       scheduled_time: delivery.scheduled_time || '',
@@ -93,7 +100,7 @@ export default function DeliveriesPage() {
 
   // Save edit
   const handleEditSave = async () => {
-    if (!editData.order_id || !editData.truck_id || !editData.scheduled_date) {
+    if (editData.order_ids.length === 0 || !editData.truck_id || !editData.scheduled_date) {
       setSnackbar({ message: 'Tous les champs obligatoires doivent être remplis', severity: 'error' });
       return;
     }
@@ -119,10 +126,15 @@ export default function DeliveriesPage() {
       <Typography variant="h4" gutterBottom>Livraisons</Typography>
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2 }}>
         <Select
-          value={orderId} onChange={e => setOrderId(e.target.value)}
-          displayEmpty sx={{ minWidth: 180 }}
+          multiple
+          value={orderIds}
+          onChange={e => setOrderIds(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
+          displayEmpty
+          sx={{ minWidth: 180 }}
         >
-          <MenuItem value="">-- Commande --</MenuItem>
+          <MenuItem value="">
+            -- Commandes --
+          </MenuItem>
           {orders.map(o => {
             const client = clients.find(c => c.id === o.client_id);
             return (
@@ -173,12 +185,15 @@ export default function DeliveriesPage() {
                   <TableCell>
                     {
                       (() => {
-                        const order = orders.find(o => o.id === d.order_id);
-                        const client = clients.find(c => c.id === order?.client_id);
-                        const product = products.find(p => p.id === order?.product_id);
-                        return order && client && product
-                          ? `${client.name} - ${product.name}${product.type ? ` (${product.type})` : ''} (${order.quantity}t, ${order.requested_date})`
-                          : d.order_id;
+                        const parts = (d.order_ids || []).map(oid => {
+                          const order = orders.find(o => o.id === oid);
+                          const client = clients.find(c => c.id === order?.client_id);
+                          const product = products.find(p => p.id === order?.product_id);
+                          return order && client && product
+                            ? `${client.name} - ${product.name}${product.type ? ` (${product.type})` : ''} (${order.quantity}t, ${order.requested_date})`
+                            : oid;
+                        });
+                        return parts.join(', ');
                       })()
                     }
                   </TableCell>
@@ -228,9 +243,10 @@ export default function DeliveriesPage() {
         <DialogTitle>Modifier la livraison</DialogTitle>
         <DialogContent>
           <Select
+            multiple
             label="Commande"
-            value={editData.order_id}
-            onChange={e => setEditData({ ...editData, order_id: e.target.value })}
+            value={editData.order_ids}
+            onChange={e => setEditData({ ...editData, order_ids: typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value })}
             fullWidth sx={{ mb: 2 }}
           >
             {orders.map(o => {
