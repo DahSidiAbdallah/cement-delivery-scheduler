@@ -36,6 +36,8 @@ export default function OrdersPage() {
     load(); loadClients(); loadProducts();
   }, []);
 
+  
+
   const handleAdd = async () => {
     console.log("requested_time to send:", time);
     if (!clientId || !productId || !quantity || !date) {
@@ -177,13 +179,17 @@ export default function OrdersPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {orders.map(o => (
+              {orders.map(o => {
+                const product = products.find(p => p.id === o.product_id);
+                return (
                 <TableRow key={o.id}>
                   <TableCell>
   {clients.find(c => c.id === o.client_id)?.name || o.client_id}
 </TableCell>
 <TableCell>
-  {products.find(p => p.id === o.product_id)?.name || o.product_id}
+{product
+          ? `${product.name} (${product.type})`
+          : o.product_id}
 </TableCell>
                   <TableCell>{o.quantity}</TableCell>
                   <TableCell>{o.requested_date}</TableCell>
@@ -197,7 +203,9 @@ export default function OrdersPage() {
                     </IconButton>
                   </TableCell>
                 </TableRow>
-              ))}
+              )
+              })}
+
             </TableBody>
           </Table>
         </TableContainer>
