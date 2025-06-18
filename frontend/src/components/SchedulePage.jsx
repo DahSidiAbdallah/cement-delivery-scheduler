@@ -5,7 +5,8 @@ import api from '../services/api';
 import {
   Box, Button, Typography, Paper, Snackbar, Alert,
   Table, TableHead, TableRow, TableCell, TableBody, TableContainer,
-  Select, MenuItem, FormControl, InputLabel, CircularProgress, IconButton
+  Select, MenuItem, FormControl, InputLabel, CircularProgress, IconButton,
+  Grid, Chip, Divider, Tooltip
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import Loading from './Loading';
@@ -21,6 +22,7 @@ const tableStyles = {
 
 export default function SchedulePage() {
   const [schedule, setSchedule] = useState([]);
+  const [scheduleStats, setScheduleStats] = useState(null);
   const [trucks, setTrucks] = useState([]);
   const [orders, setOrders] = useState([]);
   const [clients, setClients] = useState([]);
@@ -32,8 +34,47 @@ export default function SchedulePage() {
   const [isExporting, setIsExporting] = useState(false);
   const [loadingError, setLoadingError] = useState(null);
 
+  // Load schedule and stats from localStorage on component mount
+  useEffect(() => {
+    const savedSchedule = localStorage.getItem('deliverySchedule');
+    const savedStats = localStorage.getItem('deliveryStats');
+    
+    if (savedSchedule) {
+      try {
+        setSchedule(JSON.parse(savedSchedule));
+      } catch (e) {
+        console.error('Failed to parse saved schedule', e);
+      }
+    }
+    
+    if (savedStats) {
+      try {
+        setScheduleStats(JSON.parse(savedStats));
+      } catch (e) {
+        console.error('Failed to parse saved stats', e);
+      }
+    }
+    
+    loadData();
+  }, []);
+
+  // Save schedule and stats to localStorage whenever they change
+  useEffect(() => {
+    if (schedule.length > 0) {
+      localStorage.setItem('deliverySchedule', JSON.stringify(schedule));
+    } else {
+      localStorage.removeItem('deliverySchedule');
+    }
+    
+    if (scheduleStats) {
+      localStorage.setItem('deliveryStats', JSON.stringify(scheduleStats));
+    } else {
+      localStorage.removeItem('deliveryStats');
+    }
+  }, [schedule, scheduleStats]);
+
   // Load all reference data
-  const loadData = async () => {
+  const loadData = async (showNotification = true) => {
     setIsLoading(true);
     setLoadingError(null);
     try {
@@ -47,6 +88,13 @@ export default function SchedulePage() {
       setOrders(ordersRes.data);
       setClients(clientsRes.data);
       setProducts(productsRes.data);
+      if (showNotification) {
+        setSnackbar({ 
+          message: 'Données mises à jour', 
+          severity: 'success',
+          autoHideDuration: 2000
+        });
+      }
     } catch (error) {
       console.error('Error loading data:', error);
       setLoadingError(error.message || 'Failed to load data');
@@ -60,9 +108,23 @@ export default function SchedulePage() {
     }
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
+
+  // Clear the current schedule
+  const clearSchedule = () => {
+    setSchedule([]);
+    setScheduleStats(null);
+    localStorage.removeItem('deliverySchedule');
+    setSnackbar({
+      message: 'Planning effacé',
+      severity: 'info',
+      autoHideDuration: 2000
+    });
+  };
+
+  // Refresh data without clearing the schedule
+  const handleRefresh = async () => {
+    await loadData(true);
+  };
 
   // Generate schedule
   const generate = async () => {
@@ -71,11 +133,23 @@ export default function SchedulePage() {
       const res = await api.get('/schedule/deliveries');
       if (res.data.schedule) {
         setSchedule(res.data.schedule);
-        setSnackbar({ 
-          message: 'Planning généré avec succès', 
-          severity: 'success',
-          autoHideDuration: 3000
-        });
+        setScheduleStats(res.data.stats || null);
+        
+        // Show warning if not all orders were scheduled
+        if (res.data.stats && res.data.stats.total_pending_orders > res.data.stats.scheduled_orders) {
+          const unscheduled = res.data.stats.total_pending_orders - res.data.stats.scheduled_orders;
+          setSnackbar({ 
+            message: `Planning généré avec succès, mais ${unscheduled} commande(s) non planifiée(s)`, 
+            severity: 'warning',
+            autoHideDuration: 5000
+          });
+        } else {
+          setSnackbar({ 
+            message: 'Planning généré avec succès', 
+            severity: 'success',
+            autoHideDuration: 3000
+          });
+        }
       } else {
         setSnackbar({ 
           message: 'Format de réponse inattendu du serveur', 
@@ -186,7 +260,7 @@ export default function SchedulePage() {
         <Typography variant="h4">Planning des livraisons</Typography>
         <Box display="flex" gap={2}>
           <IconButton 
-            onClick={loadData} 
+            onClick={handleRefresh} 
             color="primary"
             disabled={isLoading}
             title="Rafraîchir les données"
@@ -201,6 +275,14 @@ export default function SchedulePage() {
             startIcon={isGenerating ? <CircularProgress size={20} color="inherit" /> : null}
           >
             {isGenerating ? 'Génération...' : 'Générer le planning'}
+          </Button>
+          <Button 
+            variant="outlined" 
+            color="error"
+            onClick={clearSchedule}
+            disabled={isLoading || schedule.length === 0}
+          >
+            Effacer
           </Button>
           <Button 
             variant="outlined" 
@@ -227,9 +309,94 @@ export default function SchedulePage() {
           </Select>
         </FormControl>
         <Typography color="textSecondary" variant="body2">
-          {schedule.length} livraison{schedule.length !== 1 ? 's' : ''} planifiée{schedule.length !== 1 ? 's' : ''}
+          {schedule.filter(item => item.orders && item.orders.length > 0).length} camion{schedule.filter(item => item.orders && item.orders.length > 0).length !== 1 ? 's' : ''} avec livraison{schedule.filter(item => item.orders && item.orders.length > 0).length !== 1 ? 's' : ''} planifiée{schedule.filter(item => item.orders && item.orders.length > 0).length !== 1 ? 's' : ''}
         </Typography>
       </Box>
+
+      {/* Schedule Stats */}
+      {scheduleStats && (
+        <Paper elevation={2} sx={{ mb: 3, p: 2, backgroundColor: '#f9f9f9' }}>
+          <Grid container spacing={2} alignItems="center">
+            <Grid item xs={12} md={3}>
+              <Typography variant="subtitle2" color="textSecondary">Limite de production</Typography>
+              <Box display="flex" alignItems="center" mt={0.5}>
+                <Typography variant="h6" color={scheduleStats.total_pending_quantity > scheduleStats.daily_limit ? 'error' : 'primary'}>
+                  {scheduleStats.daily_limit.toLocaleString()} tonnes
+                </Typography>
+                {scheduleStats.total_pending_quantity > scheduleStats.daily_limit && (
+                  <Tooltip title={`Dépassement de ${(scheduleStats.total_pending_quantity - scheduleStats.daily_limit).toLocaleString()} tonnes`}>
+                    <Chip 
+                      label={`+${((scheduleStats.total_pending_quantity / scheduleStats.daily_limit - 1) * 100).toFixed(0)}%`} 
+                      color="error" 
+                      size="small" 
+                      sx={{ ml: 1, fontWeight: 'bold' }}
+                    />
+                  </Tooltip>
+                )}
+              </Box>
+            </Grid>
+            
+            <Grid item xs={6} md={2}>
+              <Typography variant="subtitle2" color="textSecondary">Commandes</Typography>
+              <Box display="flex" alignItems="center" mt={0.5}>
+                <Typography variant="h6">
+                  {scheduleStats.scheduled_orders}
+                  <Typography component="span" variant="body2" color="textSecondary" sx={{ ml: 0.5 }}>
+                    / {scheduleStats.total_pending_orders}
+                  </Typography>
+                </Typography>
+                {scheduleStats.scheduled_orders < scheduleStats.total_pending_orders && (
+                  <Chip 
+                    label={`${scheduleStats.total_pending_orders - scheduleStats.scheduled_orders} non planifiées`} 
+                    color="warning" 
+                    size="small" 
+                    variant="outlined"
+                    sx={{ ml: 1, fontSize: '0.7rem' }}
+                  />
+                )}
+              </Box>
+            </Grid>
+
+            <Grid item xs={6} md={2}>
+              <Typography variant="subtitle2" color="textSecondary">Quantité totale</Typography>
+              <Box display="flex" alignItems="center" mt={0.5}>
+                <Typography variant="h6">
+                  {scheduleStats.scheduled_quantity.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                  <Typography component="span" variant="body2" color="textSecondary" sx={{ ml: 0.5 }}>
+                    / {scheduleStats.total_pending_quantity.toLocaleString(undefined, { maximumFractionDigits: 1 })} t
+                  </Typography>
+                </Typography>
+              </Box>
+            </Grid>
+
+            <Grid item xs={6} md={2}>
+              <Typography variant="subtitle2" color="textSecondary">Camions utilisés</Typography>
+              <Box display="flex" alignItems="center" mt={0.5}>
+                <Typography variant="h6">
+                  {scheduleStats.trucks_utilized}
+                  <Typography component="span" variant="body2" color="textSecondary" sx={{ ml: 0.5 }}>
+                    / {scheduleStats.total_trucks} disponibles
+                  </Typography>
+                </Typography>
+              </Box>
+            </Grid>
+
+            <Grid item xs={6} md={3}>
+              <Typography variant="subtitle2" color="textSecondary">Capacité totale</Typography>
+              <Box display="flex" alignItems="center" mt={0.5}>
+                <Typography variant="h6">
+                  {scheduleStats.total_capacity.toLocaleString()} t
+                </Typography>
+                {scheduleStats.scheduled_quantity > 0 && (
+                  <Typography variant="body2" color="textSecondary" sx={{ ml: 1 }}>
+                    ({((scheduleStats.scheduled_quantity / scheduleStats.total_capacity) * 100).toFixed(0)}% utilisé)
+                  </Typography>
+                )}
+              </Box>
+            </Grid>
+          </Grid>
+        </Paper>
+      )}
 
       {/* Pretty planning table */}
       {schedule.length > 0 && (
