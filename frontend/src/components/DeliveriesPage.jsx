@@ -182,19 +182,13 @@ export default function DeliveriesPage() {
     setEditDelivery(delivery);
     
     try {
-      // Ensure we have fresh data when opening the dialog
-      loadTrucks();
-      loadOrders();
+      setEditDelivery(delivery);
+      
       if (delivery) {
-        console.log('Editing delivery with data:', {
-          order_ids: delivery.order_ids,
-          truck_id: delivery.truck_id,
-          scheduled_date: delivery.scheduled_date,
-          status: delivery.status
-        });
+        console.log('Editing delivery:', delivery);
         
-        // Parse the date from the API response
-        let scheduledDate;
+        // Parse scheduled date or use current date if invalid
+        let scheduledDate = new Date();
         if (delivery.scheduled_date) {
           scheduledDate = new Date(delivery.scheduled_date);
           if (isNaN(scheduledDate.getTime())) {
@@ -205,10 +199,27 @@ export default function DeliveriesPage() {
           scheduledDate = new Date();
         }
         
-        // Ensure order_ids is an array and contains valid values
-        const orderIds = Array.isArray(delivery.order_ids) 
-          ? delivery.order_ids.filter(id => id != null)
-          : [];
+        // Get the order IDs for this delivery
+        let orderIds = [];
+        if (delivery.order_ids && Array.isArray(delivery.order_ids)) {
+          // If we have order_ids directly on the delivery
+          orderIds = delivery.order_ids.filter(id => id != null);
+        } else if (delivery.orders && Array.isArray(delivery.orders)) {
+          // If we have orders array with full order objects
+          orderIds = delivery.orders.map(order => order.id).filter(id => id != null);
+        } else if (delivery.order_id) {
+          // Fallback to single order_id
+          orderIds = [delivery.order_id];
+        }
+        
+        // If we still don't have order IDs, try to get them from the delivery_orders relationship
+        if (orderIds.length === 0 && delivery.delivery_orders) {
+          orderIds = delivery.delivery_orders
+            .map(doRel => doRel.order_id)
+            .filter(id => id != null);
+        }
+        
+        console.log('Setting order IDs for editing:', orderIds);
         
         setForm({
           order_ids: orderIds,
@@ -217,6 +228,11 @@ export default function DeliveriesPage() {
           scheduled_time: delivery.scheduled_time || '',
           status: delivery.status || 'en attente'
         });
+        
+        // If we have a truck ID, trigger capacity check
+        if (delivery.truck_id && orderIds.length > 0) {
+          checkTruckCapacity(delivery.truck_id, orderIds);
+        }
       } else {
         console.log('Adding new delivery');
         setForm({
@@ -226,6 +242,7 @@ export default function DeliveriesPage() {
           scheduled_time: '',
           status: 'en attente'
         });
+        setTruckCapacity({ used: 0, total: 0, exceeded: false });
       }
     } catch (error) {
       console.error('Error in handleOpenDialog:', error);
@@ -237,16 +254,40 @@ export default function DeliveriesPage() {
         scheduled_time: '',
         status: 'en attente'
       });
+      setTruckCapacity({ used: 0, total: 0, exceeded: false });
+      setSnackbar({ 
+        message: 'Erreur lors du chargement de la livraison', 
+        severity: 'error' 
+      });
     }
     
     setDialogOpen(true);
   };
 
-  // Helper function to validate UUID format
-  const isValidUUID = (uuid) => {
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    return typeof uuid === 'string' && uuidRegex.test(uuid);
+  // Helper function to validate and normalize UUID format
+  const normalizeUUID = (uuid) => {
+    try {
+      if (!uuid) return null;
+      
+      // Convert to string and trim whitespace
+      const str = String(uuid).trim().toLowerCase();
+      
+      // Check if it's a valid UUID
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (uuidRegex.test(str)) {
+        return str; // Return in lowercase for consistency
+      }
+      
+      console.warn('Invalid UUID format:', uuid);
+      return null;
+    } catch (error) {
+      console.error('Error in normalizeUUID:', error, 'Input:', uuid);
+      return null;
+    }
   };
+  
+  // Alias for backward compatibility
+  const isValidUUID = normalizeUUID;
 
   // Calculate total quantity of selected orders
   const calculateTotalQuantity = useCallback((orderIds) => {
@@ -309,52 +350,158 @@ export default function DeliveriesPage() {
   }, [dependencies.trucks, calculateTotalQuantity]);
 
   const validateForm = () => {
-    // Validate required fields
-    if (!Array.isArray(form.order_ids) || form.order_ids.length === 0) {
-      return { valid: false, message: 'Veuillez sélectionner au moins une commande.' };
+    // Check if order_ids is an array and has at least one valid ID
+    const orderIds = Array.isArray(form.order_ids) 
+      ? form.order_ids.filter(id => id != null && id !== '')
+      : [];
+      
+    if (orderIds.length === 0) {
+      return { valid: false, message: 'Veuillez sélectionner au moins une commande valide' };
     }
     
-    // Validate truck_id
     if (!form.truck_id) {
-      return { valid: false, message: 'Veuillez sélectionner un camion.' };
+      return { valid: false, message: 'Veuillez sélectionner un camion' };
     }
     
-    if (!isValidUUID(form.truck_id)) {
-      console.error('Invalid truck_id format:', form.truck_id);
-      return { valid: false, message: 'Format du numéro de camion invalide.' };
-    }
-    
-    // Check if truck capacity is exceeded
-    if (truckCapacity.exceeded) {
-      return { 
-        valid: false, 
-        message: `Capacité du camion dépassée (${truckCapacity.used} > ${truckCapacity.total})` 
-      };
-    }
-    
-    // Validate scheduled_date
     if (!form.scheduled_date) {
-      return { valid: false, message: 'Veuillez sélectionner une date de livraison.' };
+      return { valid: false, message: 'Veuillez sélectionner une date de livraison' };
     }
     
-    // Validate order_ids
-    const invalidOrderIds = form.order_ids.filter(id => !isValidUUID(id));
-    if (invalidOrderIds.length > 0) {
-      console.error('Invalid order IDs:', invalidOrderIds);
-      return { valid: false, message: 'Un ou plusieurs identifiants de commande sont invalides.' };
+    // Validate date is not in the past
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const selectedDate = new Date(form.scheduled_date);
+    selectedDate.setHours(0, 0, 0, 0);
+    
+    if (selectedDate < today) {
+      return { valid: false, message: 'La date de livraison ne peut pas être dans le passé' };
     }
     
-    // Validate time format if provided
-    if (form.scheduled_time && !/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(form.scheduled_time)) {
-      return { valid: false, message: 'Format d\'heure invalide. Utilisez le format HH:MM.' };
+    // If time is provided, validate it
+    if (form.scheduled_time) {
+      // First validate the time format
+      if (!/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(form.scheduled_time)) {
+        return { valid: false, message: 'Format d\'heure invalide. Utilisez le format HH:MM.' };
+      }
+      
+      // Check if the time is in the past for today
+      const now = new Date();
+      if (selectedDate.getTime() === today.getTime()) {
+        const [hours, minutes] = form.scheduled_time.split(':').map(Number);
+        const deliveryTime = new Date();
+        deliveryTime.setHours(hours, minutes, 0, 0);
+        
+        if (deliveryTime < now) {
+          return { valid: false, message: 'L\'heure de livraison ne peut pas être dans le passé' };
+        }
+      }
     }
     
     return { valid: true };
   };
-  
+
+  // Check if orders are already scheduled in other deliveries
+  const validateOrdersBeforeSave = useCallback(async (orderIds, currentDeliveryId = null) => {
+    if (!orderIds || orderIds.length === 0) {
+      return { valid: false, message: 'Aucune commande sélectionnée' };
+    }
+
+    try {
+      // Get all orders with their delivery status
+      const allOrders = dependencies.orders?.filter(o => orderIds.includes(o.id));
+      if (!allOrders || allOrders.length === 0) {
+        return { valid: false, message: 'Aucune commande valide trouvée' };
+      }
+      
+      // Check if any orders are already in a delivery (excluding current delivery if editing)
+      const scheduledOrders = [];
+      
+      for (const order of allOrders) {
+        try {
+          const deliveryResponse = await api.get(`/orders/${order.id}/deliveries`);
+          let deliveries = Array.isArray(deliveryResponse.data) ? deliveryResponse.data : [];
+          
+          // If editing, filter out the current delivery from the list
+          if (currentDeliveryId) {
+            deliveries = deliveries.filter(d => d.id !== currentDeliveryId);
+          }
+          
+          if (deliveries.length > 0) {
+            const delivery = deliveries[0]; // Get the first delivery
+            scheduledOrders.push({
+              order,
+              delivery
+            });
+          }
+        } catch (error) {
+          console.error(`Error checking order ${order.id} deliveries:`, error);
+          // Continue with other orders if one fails
+        }
+      }
+      
+      if (scheduledOrders.length > 0) {
+        const orderDetails = scheduledOrders.map(({ order, delivery }) => {
+          const clientName = order.client?.name || 'Client inconnu';
+          const productName = order.product?.name || 'produit inconnu';
+          const productType = order.product?.type ? ` (${order.product.type})` : '';
+          
+          let scheduleInfo = '';
+          if (delivery?.scheduled_date) {
+            const date = new Date(delivery.scheduled_date);
+            scheduleInfo = ` (Planifiée pour le ${date.toLocaleDateString('fr-FR')}`;
+            if (delivery.scheduled_time) {
+              scheduleInfo += ` à ${delivery.scheduled_time}`;
+            }
+            scheduleInfo += ')';
+          }
+          
+          return `- ${clientName}: ${order.quantity}T de ${productName}${productType}${scheduleInfo}`;
+        });
+        
+        return {
+          valid: false,
+          message: [
+            'Les commandes suivantes sont déjà planifiées :',
+            ...orderDetails
+          ].join('\n')
+        };
+      }
+      
+      return { valid: true };
+    } catch (error) {
+      console.error('Error validating orders:', error);
+      return { 
+        valid: false, 
+        message: 'Erreur lors de la vérification des commandes. Veuillez réessayer.'
+      };
+    }
+  }, [dependencies.orders]);
+
   const handleSave = async () => {
     try {
-      // Re-validate capacity right before saving
+      // Basic validation
+      if (!form.order_ids || form.order_ids.length === 0) {
+        setSnackbar({ 
+          message: 'Veuillez sélectionner au moins une commande', 
+          severity: 'warning' 
+        });
+        return;
+      }
+
+      // For new deliveries, check if orders are already scheduled
+      if (!editDelivery) {
+        const orderValidation = await validateOrdersBeforeSave(form.order_ids);
+        if (!orderValidation.valid) {
+          setSnackbar({ 
+            message: orderValidation.message,
+            severity: 'warning'
+          });
+          return;
+        }
+      }
+
+      // Validate truck capacity if we have orders and a truck
       if (form.truck_id && form.order_ids?.length > 0) {
         const isExceeded = await checkTruckCapacity(form.truck_id, form.order_ids);
         if (isExceeded) {
@@ -373,179 +520,114 @@ export default function DeliveriesPage() {
         return;
       }
       
-      // Check if the delivery is in the future
-      const now = new Date();
-      const deliveryDate = new Date(form.scheduled_date);
+      console.log(editDelivery ? 'Updating delivery...' : 'Creating delivery...');
+      setIsSaving(true);
       
-      if (form.scheduled_time) {
-        const [hours, minutes] = form.scheduled_time.split(':');
-        deliveryDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
-      }
+      // Prepare the order IDs - allow empty array for removing all orders from a delivery
+      const orderIds = Array.isArray(form.order_ids) 
+        ? form.order_ids.filter(id => id != null && id !== '')
+        : [];
       
-      if (deliveryDate <= now) {
+      // Only require orders for new deliveries
+      if (!editDelivery && orderIds.length === 0) {
         setSnackbar({ 
-          message: 'La livraison doit être programmée dans le futur.', 
+          message: 'Veuillez sélectionner au moins une commande', 
           severity: 'warning' 
         });
+        setIsSaving(false);
         return;
       }
       
-      // Check for duplicate orders in existing deliveries (excluding current delivery if editing)
-      if (form.order_ids.length > 0) {
-        const duplicateOrders = deliveries
-          .filter(delivery => 
-            // Skip current delivery when editing
-            !editDelivery || delivery.id !== editDelivery.id
-          )
-          .flatMap(delivery => delivery.order_ids)
-          .filter(orderId => form.order_ids.includes(orderId));
-        
-        if (duplicateOrders.length > 0) {
-          const duplicateDetails = duplicateOrders
-            .slice(0, 3) // Show max 3 duplicates to avoid long messages
-            .map(orderId => {
-              const order = dependencies.orders?.find(o => o?.id === orderId);
-              return order ? `#${order.id} (${order.reference || 'sans référence'})` : `#${orderId}`;
-            });
-          
-          const remaining = duplicateOrders.length - 3;
-          const moreText = remaining > 0 ? ` et ${remaining} autre(s)` : '';
-          
-          setSnackbar({
-            message: `Certaines commandes sont déjà planifiées : ${duplicateDetails.join(', ')}${moreText}`,
-            severity: 'error',
-            autoHideDuration: 10000
-          });
-          return;
-        }
-      }
-      
-      setIsSaving(true);
-      
-      // Format the date to YYYY-MM-DD for the API
-      const formattedDate = formatDateForAPI(form.scheduled_date);
-      if (!formattedDate) {
-        throw new Error('Date invalide');
-      }
-      
-      // Format the time (HH:MM format)
-      const formattedTime = form.scheduled_time ? formatTimeForAPI(form.scheduled_time) : null;
-      
-      // Format the payload to match API expectations
+      // Prepare the payload
       const payload = {
-        order_ids: form.order_ids.map(id => String(id).toLowerCase()),
-        truck_id: String(form.truck_id).toLowerCase(),
-        scheduled_date: formattedDate,
-        scheduled_time: formattedTime,
+        // Only include order_id if we have orders (for backward compatibility)
+        ...(orderIds.length > 0 && { 
+          order_id: orderIds[0],
+          order_ids: orderIds 
+        }),
+        // Always include truck_id, even if null
+        truck_id: form.truck_id || null,
+        scheduled_date: formatDateForAPI(form.scheduled_date || new Date()),
+        scheduled_time: form.scheduled_time ? formatTimeForAPI(form.scheduled_time) : null,
         status: form.status || 'en attente'
       };
       
-      console.log('Sending payload to API:', JSON.stringify(payload, null, 2));
-      
-      if (editDelivery && editDelivery.id) {
-        // Make sure we're using the correct ID format for the API
-        const deliveryId = String(editDelivery.id).toLowerCase();
-        console.log('Updating delivery with ID:', deliveryId);
-        await api.put(`/deliveries/${deliveryId}`, payload);
-        setSnackbar({ message: 'Livraison modifiée avec succès', severity: 'success' });
-      } else {
-        console.log('Creating new delivery');
-        await api.post('/deliveries', payload);
-        setSnackbar({ message: 'Livraison ajoutée avec succès', severity: 'success' });
+      // If we're updating and have no orders, explicitly set empty array
+      if (editDelivery && orderIds.length === 0) {
+        payload.order_ids = [];
       }
+
+      console.log('Sending payload:', payload);
       
+      // Make the API call
+      const response = editDelivery 
+        ? await api.put(`/deliveries/${editDelivery.id}`, payload)
+        : await api.post('/deliveries', payload);
+      
+      console.log('Save successful, response:', response.data);
+      
+      // Show success message
+      setSnackbar({ 
+        message: `Livraison ${editDelivery ? 'mise à jour' : 'créée'} avec succès`, 
+        severity: 'success' 
+      });
+      
+      // Close dialog and refresh data
       setDialogOpen(false);
+      setEditDelivery(null);
       await loadAllData();
+      
+      // Reset form
+      setForm({
+        order_ids: [],
+        truck_id: '',
+        scheduled_date: new Date(),
+        scheduled_time: '',
+        status: 'en attente'
+      });
+      
     } catch (error) {
-      console.error('Failed to save delivery:', error);
-      let message = 'Erreur lors de la sauvegarde';
-      let severity = 'error';
-      let autoHideDuration = 10000;
+      console.error('Error saving delivery:', error);
+      let errorMessage = 'Erreur lors de la sauvegarde';
       
       if (error.response) {
-        // Handle specific API error messages
-        const errorData = error.response.data || {};
-        
-        // Handle UUID/ID related errors
-        if (errorData.details?.includes('hex') || errorData.details?.includes('UUID')) {
-          message = 'Erreur de format des données. Veuillez réessayer ou contacter le support.';
-          console.error('UUID/ID format error:', errorData.details);
-          
-          // Try to reload the page to get fresh data
-          if (confirm('Une erreur est survenue avec les données. Voulez-vous recharger la page ?')) {
-            window.location.reload();
-          }
-        } 
-        // Handle "Order already scheduled" error
-        else if (errorData.error === 'Order already scheduled' || errorData.message === 'Order already scheduled') {
-          message = 'Une ou plusieurs commandes sont déjà planifiées pour une autre livraison.';
-          severity = 'warning';
-          
-          // Try to extract order IDs from the response if available
-          if (errorData.order_ids?.length > 0) {
-            const orderDetails = errorData.order_ids
-              .slice(0, 3) // Show max 3 orders
-              .map(orderId => {
-                const order = dependencies.orders?.find(o => o?.id === orderId);
-                return order ? `#${order.id} (${order.reference || 'sans référence'})` : `#${orderId}`;
-              });
-            
-            const remaining = errorData.order_ids.length - 3;
-            const moreText = remaining > 0 ? ` et ${remaining} autre(s)` : '';
-            
-            message = `Les commandes suivantes sont déjà planifiées : ${orderDetails.join(', ')}${moreText}`;
-          }
-        } 
-        // Handle other API errors
-        else if (errorData.message) {
-          message = errorData.message;
-          // Make validation errors more user-friendly
-          if (error.response.status === 400) {
-            severity = 'warning';
+        // Handle specific error cases
+        if (error.response.data) {
+          if (error.response.data.error) {
+            errorMessage = error.response.data.error;
+          } else if (error.response.data.details) {
+            errorMessage = error.response.data.details;
           }
         }
         
-        // Add details if available
-        if (errorData.details) {
-          message += ` (${errorData.details})`;
+        if (error.response.status === 400) {
+          errorMessage = errorMessage || 'Données invalides. Veuillez vérifier les informations saisies.';
+        } else if (error.response.status === 401) {
+          errorMessage = 'Session expirée. Veuillez vous reconnecter.';
+        } else if (error.response.status === 404) {
+          errorMessage = 'Ressource non trouvée. Veuillez rafraîchir la page.';
+        } else if (error.response.status === 409) {
+          errorMessage = 'Conflit de données : ' + (errorMessage || 'Certaines commandes sont déjà planifiées');
+        } else if (error.response.status >= 500) {
+          errorMessage = 'Erreur serveur. Veuillez réessayer plus tard.';
         }
       } else if (error.request) {
-        // The request was made but no response was received
-        message = 'Pas de réponse du serveur. Vérifiez votre connexion internet.';
-      } else {
-        // Something happened in setting up the request
-        message = error.message || 'Erreur inconnue';
+        // Request was made but no response received
+        errorMessage = 'Pas de réponse du serveur. Vérifiez votre connexion internet.';
+      } else if (error.message) {
+        errorMessage = error.message;
       }
       
       setSnackbar({ 
-        message,
-        severity,
-        autoHideDuration
+        message: errorMessage,
+        severity: 'error',
+        autoHideDuration: 10000 // Show error messages longer
       });
     } finally {
       setIsSaving(false);
     }
   };
-
-  // Update capacity check whenever form data changes
-  useEffect(() => {
-    if (!form.truck_id || !form.order_ids || form.order_ids.length === 0) {
-      setTruckCapacity({ used: 0, total: 0, exceeded: false });
-      return;
-    }
-    
-    // Ensure we have valid time format before checking capacity
-    if (form.scheduled_time) {
-      const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
-      if (!timeRegex.test(form.scheduled_time)) {
-        console.warn('Invalid time format, skipping capacity check:', form.scheduled_time);
-        return;
-      }
-    }
-    
-    checkTruckCapacity(form.truck_id, form.order_ids);
-  }, [form.truck_id, form.order_ids, form.scheduled_time, checkTruckCapacity]);
-
+  
   const handleEditChange = (field, value) => {
     console.log(`Field ${field} changed to:`, value);
     
@@ -585,6 +667,21 @@ export default function DeliveriesPage() {
     // For truck or order changes, the useEffect will handle capacity check
     if (field === 'truck_id' || field === 'order_ids') {
       console.log(`Handling ${field} change - capacity check will be triggered by useEffect`);
+    }
+  };
+
+  const handleOrderSelect = async (event) => {
+    const selectedIds = event.target.value;
+    setForm(prev => ({
+      ...prev,
+      order_ids: selectedIds
+    }));
+    
+    // Check capacity in real-time when orders change
+    if (form.truck_id && selectedIds.length > 0) {
+      await checkTruckCapacity(form.truck_id, selectedIds);
+    } else {
+      setTruckCapacity({ used: 0, total: 0, exceeded: false });
     }
   };
 
@@ -719,31 +816,36 @@ export default function DeliveriesPage() {
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>{editDelivery ? 'Modifier la livraison' : 'Ajouter une livraison'}</DialogTitle>
         <DialogContent>
-          <FormControl fullWidth margin="normal">
-            <InputLabel id="orders-select-label">Commandes</InputLabel>
+          <FormControl fullWidth margin="normal" error={truckCapacity.exceeded}>
+            <InputLabel>Commandes *</InputLabel>
             <Select
-              labelId="orders-select-label"
               multiple
-              value={form.order_ids}
-              onChange={(e) => setForm({ ...form, order_ids: e.target.value })}
-              label="Commandes"
-              disabled={isSaving}
+              value={form.order_ids || []}
+              onChange={handleOrderSelect}
+              label="Commandes *"
+              renderValue={(selected) => `${selected.length} commande(s) sélectionnée(s)`}
+              required
             >
+              {truckCapacity.total > 0 && (
+                <Box sx={{ p: 1, bgcolor: truckCapacity.exceeded ? '#ffebee' : '#e8f5e9', borderRadius: 1, m: 1 }}>
+                  <Typography variant="caption" color={truckCapacity.exceeded ? 'error' : 'textSecondary'}>
+                    Capacité: {truckCapacity.used.toFixed(1)}T / {truckCapacity.total.toFixed(1)}T
+                    {truckCapacity.exceeded && ' (Dépassement de capacité!)'}
+                  </Typography>
+                </Box>
+              )}
               {dependencies.orders.map(order => (
                 <MenuItem key={order.id} value={order.id}>{getOrderDetails(order.id)}</MenuItem>
               ))}
             </Select>
           </FormControl>
           <FormControl fullWidth margin="normal" error={truckCapacity.exceeded}>
-            <InputLabel id="truck-select-label">Camion</InputLabel>
+            <InputLabel>Camion *</InputLabel>
             <Select
-              labelId="truck-select-label"
-              id="truck-select"
-              value={form.truck_id}
+              value={form.truck_id || ''}
               onChange={(e) => handleEditChange('truck_id', e.target.value)}
-              label="Camion"
-              disabled={isSaving}
-              error={truckCapacity.exceeded}
+              label="Camion *"
+              required
             >
               {dependencies.trucks && dependencies.trucks.map((truck) => {
                 const truckCapacity = parseFloat(truck.capacity);

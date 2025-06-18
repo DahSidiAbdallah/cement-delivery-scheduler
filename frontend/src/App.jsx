@@ -1,4 +1,5 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
+import { Box, CircularProgress } from '@mui/material';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { LocalizationProvider } from '@mui/x-date-pickers';
@@ -7,6 +8,7 @@ import fr from 'date-fns/locale/fr';
 import { SnackbarProvider, useSnackbar } from 'notistack';
 import theme from './theme';
 import ErrorBoundary from './components/ErrorBoundary';
+import { AuthContext } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
@@ -19,8 +21,35 @@ import SchedulePage from './components/SchedulePage';
 
 // Wrapper component to provide auth context and notifications
 const AppContent = () => {
-  const token = localStorage.getItem('access_token');
+  const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('access_token'));
+  const [isLoading, setIsLoading] = useState(true);
   const { enqueueSnackbar } = useSnackbar();
+
+  // Check authentication status on initial load
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        setIsAuthenticated(false);
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        // Verify the token is still valid
+        await api.get('/auth/verify-token');
+        setIsAuthenticated(true);
+      } catch (error) {
+        console.error('Authentication check failed:', error);
+        localStorage.removeItem('access_token');
+        setIsAuthenticated(false);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, []);
 
   // Global notification handler
   const showNotification = useCallback((message, variant = 'info') => {
@@ -34,21 +63,53 @@ const AppContent = () => {
     });
   }, [enqueueSnackbar]);
 
+  // Update authentication state
+  const handleLogin = useCallback(() => {
+    setIsAuthenticated(true);
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem('access_token');
+    setIsAuthenticated(false);
+  }, []);
+
+  if (isLoading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
   return (
     <ErrorBoundary>
-      <Routes>
-        <Route path="/" element={<LoginPage showNotification={showNotification} />} />
-        <Route element={token ? <Layout /> : <Navigate to="/" replace />}>
-          <Route path="/dashboard" element={<Dashboard showNotification={showNotification} />} />
-          <Route path="/clients" element={<ClientsPage showNotification={showNotification} />} />
-          <Route path="/products" element={<ProductsPage showNotification={showNotification} />} />
-          <Route path="/trucks" element={<TrucksPage showNotification={showNotification} />} />
-          <Route path="/orders" element={<OrdersPage showNotification={showNotification} />} />
-          <Route path="/deliveries" element={<DeliveriesPage showNotification={showNotification} />} />
-          <Route path="/schedule" element={<SchedulePage showNotification={showNotification} />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <AuthContext.Provider value={{ isAuthenticated, onLogin: handleLogin, onLogout: handleLogout }}>
+        <Routes>
+          <Route 
+            path="/" 
+            element={
+              isAuthenticated ? (
+                <Navigate to="/dashboard" replace />
+              ) : (
+                <LoginPage 
+                  showNotification={showNotification} 
+                  onLoginSuccess={handleLogin} 
+                />
+              )
+            } 
+          />
+          <Route element={isAuthenticated ? <Layout onLogout={handleLogout} /> : <Navigate to="/" replace />}>
+            <Route path="/dashboard" element={<Dashboard showNotification={showNotification} />} />
+            <Route path="/clients" element={<ClientsPage showNotification={showNotification} />} />
+            <Route path="/products" element={<ProductsPage showNotification={showNotification} />} />
+            <Route path="/trucks" element={<TrucksPage showNotification={showNotification} />} />
+            <Route path="/orders" element={<OrdersPage showNotification={showNotification} />} />
+            <Route path="/deliveries" element={<DeliveriesPage showNotification={showNotification} />} />
+            <Route path="/schedule" element={<SchedulePage showNotification={showNotification} />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AuthContext.Provider>
     </ErrorBoundary>
   );
 };

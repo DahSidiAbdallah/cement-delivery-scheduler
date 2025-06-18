@@ -10,7 +10,7 @@ import api from '../services/api';
 import mafci from '../assets/MAFCI.png';
 import { globalStyles } from '../theme';
 
-export default function LoginPage({ showNotification }) {
+export default function LoginPage({ showNotification, onLoginSuccess }) {
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -25,8 +25,20 @@ export default function LoginPage({ showNotification }) {
   useEffect(() => {
     const token = localStorage.getItem('access_token');
     if (token) {
-      // Optional: Validate token before redirecting
-      navigate('/dashboard');
+      // Verify token is still valid
+      const verifyToken = async () => {
+        try {
+          // Try to make an authenticated request to verify the token
+          await api.get('/auth/verify-token');
+          // If successful, redirect to dashboard
+          navigate('/dashboard', { replace: true });
+        } catch (error) {
+          // If token is invalid, clear it and stay on login page
+          console.error('Token verification failed:', error);
+          localStorage.removeItem('access_token');
+        }
+      };
+      verifyToken();
     }
   }, [navigate]);
 
@@ -70,7 +82,8 @@ export default function LoginPage({ showNotification }) {
       if (response.data?.access_token) {
         localStorage.setItem('access_token', response.data.access_token);
         showNotification('Connexion réussie', 'success');
-        navigate('/dashboard');
+        onLoginSuccess();
+        navigate('/dashboard', { replace: true });
       } else {
         throw new Error('Aucun jeton reçu du serveur');
       }

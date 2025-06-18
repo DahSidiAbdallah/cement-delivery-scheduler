@@ -159,11 +159,10 @@ def update_delivery(delivery_id):
 
         data = request.get_json(force=True, silent=True)
 
-        order_ids = None
-        if 'order_ids' in data:
-            order_ids = data['order_ids']
-        elif 'order_id' in data:
-            order_ids = [data['order_id']]
+        # Handle order_ids - accept empty array to remove all orders
+        order_ids = data.get('order_ids')
+        if order_ids is None and 'order_id' in data:
+            order_ids = [data['order_id']]  # For backward compatibility
 
         if 'scheduled_date' in data:
             if not data['scheduled_date']:
@@ -182,37 +181,51 @@ def update_delivery(delivery_id):
             else:
                 delivery.scheduled_time = data['scheduled_time']
 
+        # Handle order updates if order_ids is provided (can be empty array)
         if order_ids is not None:
+            # Convert all order IDs to UUID objects
             conv = []
             for oid in order_ids:
-                if isinstance(oid, str):
-                    conv.append(uuid.UUID(oid))
-                else:
-                    conv.append(oid)
+                try:
+                    conv.append(uuid.UUID(oid) if isinstance(oid, str) else oid)
+                except (ValueError, TypeError, AttributeError):
+                    return jsonify({"error": f"Invalid order ID format: {oid}"}), 400
 
-            # check duplicates
+            # Check for duplicate orders in other deliveries
             for oid in conv:
-                existing = DeliveryOrder.query.filter_by(order_id=oid).first()
-                if existing and existing.delivery_id != delivery.id:
-                    return jsonify({"error": "Order already scheduled"}), 400
-                if Delivery.query.filter(Delivery.order_id==oid, Delivery.id!=delivery.id).first():
-                    return jsonify({"error": "Order already scheduled"}), 400
+                existing = DeliveryOrder.query.filter(
+                    DeliveryOrder.order_id == oid,
+                    DeliveryOrder.delivery_id != delivery.id
+                ).first()
+                
+                # Also check the legacy order_id field
+                legacy_delivery = Delivery.query.filter(
+                    Delivery.order_id == oid,
+                    Delivery.id != delivery.id
+                ).first()
+                
+                if existing or legacy_delivery:
+                    return jsonify({"error": f"Order {oid} is already scheduled in another delivery"}), 400
 
-            # truck capacity validation
-            truck = Truck.query.get(data.get('truck_id', delivery.truck_id))
-            total = 0
-            for oid in conv:
-                order = Order.query.get(oid)
-                if not order:
-                    return jsonify({"error": f"Order {oid} not found"}), 400
-                total += order.quantity
-            if truck and truck.capacity and total > truck.capacity:
-                return jsonify({"error": "Truck capacity exceeded"}), 400
+            # Validate truck capacity if we have orders
+            if conv:
+                truck = Truck.query.get(data.get('truck_id', delivery.truck_id))
+                if truck and truck.capacity is not None:
+                    total = sum(
+                        Order.query.get(oid).quantity
+                        for oid in conv
+                        if Order.query.get(oid) is not None
+                    )
+                    if total > truck.capacity:
+                        return jsonify({"error": f"Truck capacity exceeded: {total} > {truck.capacity}"}), 400
 
-            # replace associations
+            # Update the many-to-many relationship
             DeliveryOrder.query.filter_by(delivery_id=delivery.id).delete()
             for oid in conv:
-                db.session.add(DeliveryOrder(delivery_id=delivery.id, order_id=oid))
+                if Order.query.get(oid):  # Only add if order exists
+                    db.session.add(DeliveryOrder(delivery_id=delivery.id, order_id=oid))
+            
+            # Clear the legacy order_id field since we're using the many-to-many relationship
             delivery.order_id = None
         if 'truck_id' in data and data['truck_id']:
             delivery.truck_id = uuid.UUID(data['truck_id'])
