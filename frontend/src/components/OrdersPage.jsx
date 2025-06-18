@@ -14,9 +14,7 @@ import AddIcon from '@mui/icons-material/Add';
 import api from '../services/api';
 
 const statusColors = {
-  'en attente': 'warning',
-  'en cours': 'info',
-  'livrée': 'success',
+  'Pending': 'warning',
   'annulée': 'error'
 };
 
@@ -45,7 +43,7 @@ export default function OrdersPage() {
     quantity: '',
     requested_date: new Date().toISOString().split('T')[0], // Today's date as default
     requested_time: '',
-    status: 'en attente'
+    status: 'Pending'
   };
   const [editData, setEditData] = useState(initialEditData);
 
@@ -245,7 +243,7 @@ export default function OrdersPage() {
       quantity: order.quantity ? order.quantity.toString() : '',
       requested_date: formattedDate,
       requested_time: order.requested_time ? order.requested_time.substring(0, 5) : '',
-      status: order.status || 'en attente'
+      status: order.status || 'Pending'
     };
     
     setEditData(editData);
@@ -289,7 +287,7 @@ export default function OrdersPage() {
         product_id: editData.product_id,
         quantity: parsedQuantity,
         requested_date: editData.requested_date,
-        status: editData.status || 'en attente'
+        status: editData.status || 'Pending'
       };
       
       // Handle time formatting - ensure HH:MM format
@@ -472,7 +470,7 @@ export default function OrdersPage() {
                         <Chip 
                           label={order.status}
                           size="small"
-                          color={statusColors[order.status] || 'default'}
+                          color={order.status === 'annulée' ? 'error' : 'warning'}
                           sx={{ textTransform: 'capitalize' }}
                         />
                       </TableCell>
@@ -618,12 +616,12 @@ export default function OrdersPage() {
           onChange={(e) => handleEditChange('status', e.target.value)}
           label="Statut"
         >
-          {Object.entries(statusColors).map(([status, color]) => (
+          {['Pending', 'annulée'].map((status) => (
             <MenuItem key={status} value={status}>
               <Chip 
                 label={status.charAt(0).toUpperCase() + status.slice(1)}
                 size="small"
-                color={color}
+                color={status === 'annulée' ? 'error' : 'warning'}
                 sx={{ textTransform: 'capitalize' }}
               />
             </MenuItem>
