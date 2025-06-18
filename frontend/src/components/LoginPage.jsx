@@ -81,6 +81,9 @@ export default function LoginPage({ showNotification, onLoginSuccess }) {
 
       if (response.data?.access_token) {
         localStorage.setItem('access_token', response.data.access_token);
+        if (response.data?.role) {
+          localStorage.setItem('role', response.data.role);
+        }
         showNotification('Connexion réussie', 'success');
         onLoginSuccess();
         navigate('/dashboard', { replace: true });

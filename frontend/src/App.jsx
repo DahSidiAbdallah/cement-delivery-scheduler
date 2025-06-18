@@ -18,6 +18,7 @@ import TrucksPage from './components/TrucksPage';
 import OrdersPage from './components/OrdersPage';
 import DeliveriesPage from './components/DeliveriesPage';
 import SchedulePage from './components/SchedulePage';
+import UsersPage from './components/UsersPage';
 
 // Wrapper component to provide auth context and notifications
 const AppContent = () => {
@@ -83,7 +84,7 @@ const AppContent = () => {
 
   return (
     <ErrorBoundary>
-      <AuthContext.Provider value={{ isAuthenticated, onLogin: handleLogin, onLogout: handleLogout }}>
+      <AuthContext.Provider value={{ isAuthenticated, onLogin: handleLogin, onLogout: handleLogout, role: localStorage.getItem('role') || 'viewer' }}>
         <Routes>
           <Route 
             path="/" 
@@ -106,6 +107,11 @@ const AppContent = () => {
             <Route path="/orders" element={<OrdersPage showNotification={showNotification} />} />
             <Route path="/deliveries" element={<DeliveriesPage showNotification={showNotification} />} />
             <Route path="/schedule" element={<SchedulePage showNotification={showNotification} />} />
+              <Route path="/users" element={
+                (localStorage.getItem('role') === 'admin') ?
+                  <UsersPage showNotification={showNotification} /> :
+                  <Navigate to="/dashboard" replace />
+              } />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

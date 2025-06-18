@@ -227,6 +227,39 @@ export default function SchedulePage() {
     return deliveries;
   };
 
+  // Sort the entire planning (schedule array) based on sortBy
+  const getSortedSchedule = () => {
+    if (sortBy === 'order') {
+      return schedule;
+    }
+    const sorted = [...schedule];
+    if (sortBy === 'time') {
+      sorted.sort((a, b) => {
+        const aDeliveries = renderDeliveries(a.orders);
+        const bDeliveries = renderDeliveries(b.orders);
+        // Combine date and time for full chronological sorting
+        const aDate = aDeliveries[0]?.requestedDate || '';
+        const bDate = bDeliveries[0]?.requestedDate || '';
+        const aTime = aDeliveries[0]?.requestedTime || '';
+        const bTime = bDeliveries[0]?.requestedTime || '';
+        // ISO format: 'YYYY-MM-DDTHH:MM' for correct string comparison
+        const aDateTime = aDate && aTime ? `${aDate}T${aTime}` : '';
+        const bDateTime = bDate && bTime ? `${bDate}T${bTime}` : '';
+        return aDateTime.localeCompare(bDateTime);
+      });
+    } else if (sortBy === 'client') {
+      sorted.sort((a, b) => {
+        const aDeliveries = renderDeliveries(a.orders);
+        const bDeliveries = renderDeliveries(b.orders);
+        const aName = aDeliveries[0]?.clientName || '';
+        const bName = bDeliveries[0]?.clientName || '';
+        return aName.localeCompare(bName);
+      });
+    }
+    return sorted;
+  };
+
+
   // Show loading state
   if (isLoading && schedule.length === 0) {
     return <Loading message="Chargement des données..." />;
@@ -304,7 +337,7 @@ export default function SchedulePage() {
             label="Trier par"
           >
             <MenuItem value="order">Ordre d'affectation</MenuItem>
-            <MenuItem value="time">Heure de livraison</MenuItem>
+            <MenuItem value="time">Date de livraison</MenuItem>
             <MenuItem value="client">Client</MenuItem>
           </Select>
         </FormControl>
@@ -416,7 +449,7 @@ export default function SchedulePage() {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {schedule.map((item, idx) => {
+                {getSortedSchedule().map((item, idx) => {
                   const deliveries = renderDeliveries(item.orders);
                   // Separate row for each delivery, but only show truck for the first row
                   return deliveries.length === 0 ? (

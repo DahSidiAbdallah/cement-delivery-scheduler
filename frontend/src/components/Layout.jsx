@@ -1,7 +1,8 @@
 // src/components/Layout.jsx
-import React, { useMemo } from 'react';
+import React, { useMemo, useContext } from 'react';
 import { globalStyles } from '../theme';
 import MAFCILogo from '../assets/MAFCI.png';
+import { AuthContext } from '../contexts/AuthContext';
 import {
   AppBar,
   Toolbar,
@@ -48,6 +49,8 @@ const navItems = [
 ];
 
 export default function Layout() {
+  // ...rest of code
+
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [mobileOpen, setMobileOpen] = React.useState(false);
@@ -58,10 +61,14 @@ export default function Layout() {
     setMobileOpen(!mobileOpen);
   };
 
+  const { onLogout } = useContext(AuthContext) || {};
   const logout = () => {
     localStorage.removeItem('access_token');
+    localStorage.removeItem('role');
+    if (onLogout) onLogout();
     navigate('/');
   };
+
 
   const drawer = (
     <Box sx={{ overflow: 'auto' }}>

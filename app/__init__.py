@@ -31,5 +31,6 @@ def create_app():
     app.register_blueprint(auth.bp)
     app.register_blueprint(schedule.bp)
     app.register_blueprint(whatsapp.bp)
+   
 
     return app

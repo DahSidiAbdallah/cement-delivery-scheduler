@@ -10,8 +10,13 @@ import AssignmentIcon from '@mui/icons-material/Assignment';
 import LocalMallIcon from '@mui/icons-material/LocalMall';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 
+import { useContext } from 'react';
+import { AuthContext } from '../contexts/AuthContext';
+
 export default function Dashboard() {
   const navigate = useNavigate();
+
+  const { role = localStorage.getItem('role') || 'viewer' } = useContext(AuthContext) || {};
 
   const pages = [
     { label: 'Clients',    to: '/clients',    icon: <PeopleIcon fontSize="large" color="primary" /> },
@@ -21,6 +26,10 @@ export default function Dashboard() {
     { label: 'Livraisons', to: '/deliveries', icon: <LocalMallIcon fontSize="large" color="info" /> },
     { label: 'Calendrier',   to: '/schedule',   icon: <CalendarMonthIcon fontSize="large" color="error" /> },
   ];
+
+  if (role === 'admin') {
+    pages.push({ label: 'Gestion des utilisateurs', to: '/users', icon: <PeopleIcon fontSize="large" color="action" /> });
+  }
 
   return (
     <Box sx={{ p: 4, background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)', minHeight: '100vh' }}>
