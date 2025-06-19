@@ -31,8 +31,13 @@ export default function OrdersPage() {
   const [clientId, setClientId] = useState('');
   const [productId, setProductId] = useState('');
   const [quantity, setQuantity] = useState('');
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
+  // Set default date and time to current date and time
+  const now = new Date();
+  const currentDate = now.toISOString().split('T')[0];
+  const currentTime = now.toTimeString().slice(0, 5); // Get HH:MM format
+  
+  const [date, setDate] = useState(currentDate);
+  const [time, setTime] = useState(currentTime);
   
   // Dialog state
   const [deleteId, setDeleteId] = useState(null);
@@ -142,12 +147,19 @@ export default function OrdersPage() {
       
       await api.post('/orders', payload);
       
-      // Reset form
-      setClientId('');
-      setProductId('');
-      setQuantity('');
-      setDate('');
-      setTime('');
+      const resetForm = () => {
+        const now = new Date();
+        const currentDate = now.toISOString().split('T')[0];
+        const currentTime = now.toTimeString().slice(0, 5);
+        
+        setClientId('');
+        setProductId('');
+        setQuantity('');
+        setDate(currentDate);
+        setTime(currentTime);
+      };
+      
+      resetForm();
       
       // Refresh data
       await loadOrders();
@@ -390,7 +402,7 @@ export default function OrdersPage() {
           />
           
           <TextField
-            label="Date de livraison *"
+            label="Date de Commande *"
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
@@ -402,7 +414,7 @@ export default function OrdersPage() {
           />
           
           <TextField
-            label="Heure de livraison"
+            label="Heure de Commande"
             type="time"
             value={time}
             onChange={(e) => setTime(e.target.value)}
@@ -432,7 +444,7 @@ export default function OrdersPage() {
                 <TableCell>Client</TableCell>
                 <TableCell>Produit</TableCell>
                 <TableCell align="right">Quantité (t)</TableCell>
-                <TableCell>Date livraison</TableCell>
+                <TableCell>Date de Commande</TableCell>
                 <TableCell>Heure</TableCell>
                 <TableCell>Statut</TableCell>
                 <TableCell align="right">Actions</TableCell>
@@ -586,7 +598,7 @@ export default function OrdersPage() {
       />
       
       <TextField
-        label="Date de livraison *"
+        label="Date de Commande *"
         type="date"
         value={editData.requested_date}
         onChange={(e) => handleEditChange('requested_date', e.target.value)}
@@ -598,7 +610,7 @@ export default function OrdersPage() {
       />
       
       <TextField
-        label="Heure de livraison (optionnelle)"
+        label="Heure de Commande (optionnelle)"
         type="time"
         value={editData.requested_time || ''}
         onChange={(e) => handleEditChange('requested_time', e.target.value || null)}
