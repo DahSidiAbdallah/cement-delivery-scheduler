@@ -104,7 +104,8 @@ def create_delivery():
             scheduled_date=data.get('scheduled_date'),
             scheduled_time=data.get('scheduled_time'),
             status=data.get('status', 'Programmé'),
-            destination=data.get('destination', '')
+            destination=data.get('destination', ''),
+            notes=data.get('notes', '')
         )
         db.session.add(new_delivery)
         db.session.flush()
@@ -139,7 +140,8 @@ def get_deliveries():
                 "scheduled_date": delivery.scheduled_date.isoformat() if delivery.scheduled_date else None,
                 "scheduled_time": str(delivery.scheduled_time) if delivery.scheduled_time else None,
                 "status": delivery.status,
-                "destination": delivery.destination
+                "destination": delivery.destination,
+                "notes": delivery.notes
             })
         return jsonify(result), 200
     except Exception as e:
@@ -168,6 +170,8 @@ def update_delivery(delivery_id):
         delivery.destination = data['destination'] or ''
     if 'status' in data:
         delivery.status = data['status']
+    if 'notes' in data:
+        delivery.notes = data['notes'] or ''
 
     # 4) Convert and set truck_id if provided
     if 'truck_id' in data:

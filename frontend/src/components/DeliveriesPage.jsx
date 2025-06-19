@@ -114,7 +114,8 @@ export default function DeliveriesPage() {
     scheduled_date: new Date(),
     scheduled_time: '',
     status: 'en attente',
-    destination: ''
+    destination: '',
+    notes: ''
   });
   const [truckCapacity, setTruckCapacity] = useState({ used: 0, total: 0, exceeded: false });
   const [deleteConfirmation, setDeleteConfirmation] = useState({ open: false, id: null });
@@ -245,7 +246,8 @@ export default function DeliveriesPage() {
           scheduled_date: scheduledDate,
           scheduled_time: delivery.scheduled_time || '',
           status: delivery.status || 'en attente',
-          destination: delivery.destination || ''
+          destination: delivery.destination || '',
+          notes: delivery.notes || ''
         });
         
         // If we have a truck ID, trigger capacity check
@@ -260,7 +262,8 @@ export default function DeliveriesPage() {
           scheduled_date: new Date(),
           scheduled_time: '',
           status: 'en attente',
-          destination: ''
+          destination: '',
+          notes: ''
         });
         setTruckCapacity({ used: 0, total: 0, exceeded: false });
       }
@@ -560,7 +563,8 @@ export default function DeliveriesPage() {
         scheduled_date: formatDateForAPI(form.scheduled_date || new Date()),
         scheduled_time: form.scheduled_time ? formatTimeForAPI(form.scheduled_time) : null,
         status: form.status || 'en attente',
-        destination: form.destination || ''
+        destination: form.destination || '',
+        notes: form.notes || ''
       };
       
       // Handle truck_id - always include it in the payload when updating
@@ -604,7 +608,8 @@ export default function DeliveriesPage() {
         scheduled_date: new Date(),
         scheduled_time: '',
         status: 'en attente',
-        destination: ''
+        destination: '',
+        notes: ''
       });
       
     } catch (error) {
@@ -795,6 +800,7 @@ export default function DeliveriesPage() {
                 <TableCell>Camion</TableCell>
                 <TableCell>Date Prévue</TableCell>
                 <TableCell>Destination</TableCell>
+                <TableCell>Notes</TableCell>
                 <TableCell>Statut</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
@@ -811,6 +817,9 @@ export default function DeliveriesPage() {
                     <TableCell>{getTruckDetails(delivery.truck_id)}</TableCell>
                     <TableCell>{formatDateForDisplay(delivery.scheduled_date)}</TableCell>
                     <TableCell>{delivery.destination || 'Non spécifiée'}</TableCell>
+                    <TableCell style={{ maxWidth: '200px', whiteSpace: 'normal', wordWrap: 'break-word' }}>
+                      {delivery.notes || '-'}
+                    </TableCell>
                     <TableCell>
                       <Chip 
                         label={delivery.status}
@@ -957,6 +966,17 @@ export default function DeliveriesPage() {
             margin="normal"
             required
             disabled={isSaving}
+          />
+          <TextField
+            label="Notes"
+            value={form.notes || ''}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            fullWidth
+            margin="normal"
+            multiline
+            rows={3}
+            disabled={isSaving}
+            placeholder="Ajoutez des notes ou des instructions pour cette livraison"
           />
         </DialogContent>
         <DialogActions>
