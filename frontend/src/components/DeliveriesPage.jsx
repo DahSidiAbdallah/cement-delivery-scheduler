@@ -4,8 +4,9 @@ import {
   TableHead, TableRow, IconButton, Snackbar, Dialog, DialogTitle, DialogContent, 
   DialogActions, CircularProgress, Alert, MenuItem, Select, InputLabel, FormControl, 
   Chip, TextField, TablePagination, TableSortLabel, Tooltip, DialogContentText, Divider,
-  FormHelperText
+  FormHelperText, Avatar, Stack
 } from '@mui/material';
+import NotesIcon from '@mui/icons-material/Notes';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -817,8 +818,34 @@ export default function DeliveriesPage() {
                     <TableCell>{getTruckDetails(delivery.truck_id)}</TableCell>
                     <TableCell>{formatDateForDisplay(delivery.scheduled_date)}</TableCell>
                     <TableCell>{delivery.destination || 'Non spécifiée'}</TableCell>
-                    <TableCell style={{ maxWidth: '200px', whiteSpace: 'normal', wordWrap: 'break-word' }}>
-                      {delivery.notes || '-'}
+                    <TableCell>
+                      {delivery.notes ? (
+                        <Tooltip title={delivery.notes} arrow>
+                          <Chip
+                            icon={<NotesIcon />}
+                            label={delivery.notes.length > 20 ? `${delivery.notes.substring(0, 20)}...` : delivery.notes}
+                            size="small"
+                            color="default"
+                            variant="outlined"
+                            sx={{ 
+                              maxWidth: '200px',
+                              '& .MuiChip-label': {
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                display: 'block'
+                              }
+                            }}
+                          />
+                        </Tooltip>
+                      ) : (
+                        <Chip
+                          label="Aucune note"
+                          size="small"
+                          color="default"
+                          variant="outlined"
+                        />
+                      )}
                     </TableCell>
                     <TableCell>
                       <Chip 
