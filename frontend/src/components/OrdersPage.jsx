@@ -348,176 +348,185 @@ export default function OrdersPage() {
 
   if (isLoading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
+      <Box sx={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '80vh',
+        flexDirection: 'column',
+        gap: 2
+      }}>
         <CircularProgress />
-      </Box>
-    );
-  }
-
-  return (
-    <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">Gestion des Commandes</Typography>
-        <Button 
-          variant="outlined" 
-          startIcon={<RefreshIcon />} 
+        <Button
+          variant="outlined"
           onClick={loadAllData}
-          disabled={isLoading}
+          startIcon={<RefreshIcon />}
+          sx={{ 
+            whiteSpace: 'nowrap',
+            py: { xs: 1, sm: 0.5 },
+            fontSize: { xs: '0.875rem', sm: '0.9375rem' }
+          }}
         >
           Actualiser
         </Button>
       </Box>
-      
+    );
+  }
+
+
+  return (
+    <Box sx={{ p: 3 }}>
       <Paper sx={{ p: 3, mb: 3 }} elevation={2}>
         <Typography variant="h6" gutterBottom>Nouvelle Commande</Typography>
         <Box display="flex" gap={2} flexWrap="wrap" alignItems="flex-end">
           <FormControl size="small" sx={{ minWidth: 200 }} disabled={isSaving}>
             <InputLabel>Client *</InputLabel>
-            <Select
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              label="Client"
-            >
-              {clients.map(client => (
-                <MenuItem key={client.id} value={client.id}>
-                  {client.name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          
-          <FormControl size="small" sx={{ minWidth: 200 }} disabled={isSaving}>
-            <InputLabel>Produit *</InputLabel>
-            <Select
-              value={productId}
-              onChange={(e) => setProductId(e.target.value)}
-              label="Produit"
-            >
-              {products.map(product => (
-                <MenuItem key={product.id} value={product.id}>
-                  {product.name}{product.type ? ` (${product.type})` : ''}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          
-          <TextField
-            label="Quantité (tonnes) *"
-            type="number"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            size="small"
-            sx={{ width: 150 }}
-            disabled={isSaving}
-            inputProps={{ min: 0, step: 0.01 }}
-          />
-          
-          <TextField
-            label="Date de Commande *"
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            InputLabelProps={{
-              shrink: true,
-            }}
-            size="small"
-            disabled={isSaving}
-          />
-          
-          <TextField
-            label="Heure de Commande"
-            type="time"
-            value={time}
-            onChange={(e) => setTime(e.target.value)}
-            InputLabelProps={{
-              shrink: true,
-            }}
-            size="small"
-            disabled={isSaving}
-          />
-          
-          <Button 
-            variant="contained" 
-            onClick={handleAdd}
-            disabled={!clientId || !productId || !quantity || !date || isSaving}
-            startIcon={isSaving ? <CircularProgress size={20} color="inherit" /> : <AddIcon />}
+          <Select
+            value={clientId}
+            onChange={(e) => setClientId(e.target.value)}
+            label="Client"
           >
-            {isSaving ? 'Ajout...' : 'Ajouter'}
-          </Button>
-        </Box>
-      </Paper>
-      
-      <Paper sx={{ p: 2 }} elevation={2}>
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Client</TableCell>
-                <TableCell>Produit</TableCell>
-                <TableCell align="right">Quantité (t)</TableCell>
-                <TableCell>Date de Commande</TableCell>
-                <TableCell>Heure</TableCell>
-                <TableCell>Statut</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
+            {clients.map(client => (
+              <MenuItem key={client.id} value={client.id}>
+                {client.name}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <FormControl size="small" sx={{ minWidth: 200 }} disabled={isSaving}>
+          <InputLabel>Produit *</InputLabel>
+          <Select
+            value={productId}
+            onChange={(e) => setProductId(e.target.value)}
+            label="Produit"
+          >
+            {products.map(product => (
+              <MenuItem key={product.id} value={product.id}>
+                {product.name}{product.type ? ` (${product.type})` : ''}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <TextField
+          label="Quantité (tonnes) *"
+          type="number"
+          value={quantity}
+          onChange={(e) => setQuantity(e.target.value)}
+          size="small"
+          sx={{ width: 150 }}
+          disabled={isSaving}
+          inputProps={{ min: 0, step: 0.01 }}
+        />
+
+        <TextField
+          label="Date de Commande *"
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          InputLabelProps={{
+            shrink: true,
+          }}
+          size="small"
+          disabled={isSaving}
+        />
+
+        <TextField
+          label="Heure de Commande"
+          type="time"
+          value={time}
+          onChange={(e) => setTime(e.target.value)}
+          InputLabelProps={{
+            shrink: true,
+          }}
+          size="small"
+          disabled={isSaving}
+        />
+
+        <Button 
+          variant="contained" 
+          onClick={handleAdd}
+          disabled={!clientId || !productId || !quantity || !date || isSaving}
+          startIcon={isSaving ? <CircularProgress size={20} color="inherit" /> : <AddIcon />}
+        >
+          {isSaving ? 'Ajout...' : 'Ajouter'}
+        </Button>
+      </Box>
+    </Paper>
+
+    <Paper sx={{ p: 2, overflow: 'auto' }} elevation={2}>
+      <TableContainer sx={{ maxHeight: 'calc(100vh - 300px)' }}>
+        <Table stickyHeader size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell sx={{ minWidth: 120 }}>Client</TableCell>
+              <TableCell sx={{ minWidth: 120 }}>Produit</TableCell>
+              <TableCell sx={{ minWidth: 80 }}>Quantité</TableCell>
+              <TableCell sx={{ minWidth: 100 }}>Date</TableCell>
+              <TableCell sx={{ minWidth: 80 }}>Heure</TableCell>
+              <TableCell sx={{ minWidth: 100 }}>Statut</TableCell>
+              <TableCell sx={{ minWidth: 100 }}>Actions</TableCell>
+            </TableRow>
+          </TableHead>
             <TableBody>
-              {orders.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
-                    <Typography variant="body2" color="textSecondary">
-                      Aucune commande trouvée
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              ) : (
+              {orders.length > 0 ? (
                 orders.map(order => {
                   const client = clients.find(c => c.id === order.client_id) || { name: 'Inconnu' };
                   const product = products.find(p => p.id === order.product_id) || { name: 'Inconnu' };
                   
                   return (
-                    <TableRow 
-                      key={order.id}
-                      hover
-                      sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
-                    >
+                    <TableRow key={order.id} hover>
                       <TableCell>{client.name}</TableCell>
-                      <TableCell>
-                        {product.name}
-                        {product.type && ` (${product.type})`}
-                      </TableCell>
-                      <TableCell align="right">{parseFloat(order.quantity).toFixed(2)}</TableCell>
+                      <TableCell>{product.name}{product.type ? ` (${product.type})` : ''}</TableCell>
+                      <TableCell>{parseFloat(order.quantity).toFixed(2)}</TableCell>
                       <TableCell>{new Date(order.requested_date).toLocaleDateString('fr-FR')}</TableCell>
                       <TableCell>{order.requested_time ? order.requested_time.substring(0, 5) : '-'}</TableCell>
                       <TableCell>
                         <Chip 
                           label={order.status}
-                          size="small"
                           color={order.status === 'annulée' ? 'error' : 'warning'}
-                          sx={{ textTransform: 'capitalize' }}
+                          size="small"
+                          sx={{ 
+                            textTransform: 'capitalize',
+                            minWidth: 80,
+                            justifyContent: 'center'
+                          }}
                         />
                       </TableCell>
-                      <TableCell align="right">
-                        <IconButton 
-                          size="small" 
-                          onClick={() => handleEditOpen(order)}
-                          disabled={isSaving}
-                          color="primary"
-                        >
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                        <IconButton 
-                          size="small" 
-                          onClick={() => setDeleteId(order.id)}
-                          disabled={isDeleting}
-                          color="error"
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <IconButton 
+                            color="primary" 
+                            onClick={() => handleEditOpen(order)}
+                            size="small"
+                            disabled={isSaving}
+                            sx={{ '&:hover': { bgcolor: 'primary.light', color: 'white' } }}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton 
+                            color="error" 
+                            onClick={() => setDeleteId(order.id)}
+                            size="small"
+                            disabled={isDeleting}
+                            sx={{ '&:hover': { bgcolor: 'error.light', color: 'white' } }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Box>
                       </TableCell>
                     </TableRow>
                   );
                 })
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
+                    <Typography color="textSecondary">
+                      Aucune commande trouvée
+                    </Typography>
+                  </TableCell>
+                </TableRow>
               )}
             </TableBody>
           </Table>
@@ -563,11 +572,11 @@ export default function OrdersPage() {
       </Dialog>
       
       <Dialog open={!!editId} onClose={() => !isSaving && setEditId(null)} fullWidth maxWidth="sm">
-  <DialogTitle>Modifier la commande</DialogTitle>
-  <DialogContent>
-    <Box sx={{ mt: 2 }}>
-      <FormControl fullWidth size="small" sx={{ mb: 2 }} disabled={isSaving}>
-        <InputLabel>Client *</InputLabel>
+        <DialogTitle>Modifier la commande</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <FormControl fullWidth size="small" sx={{ mb: 2 }} disabled={isSaving}>
+              <InputLabel>Client *</InputLabel>
         <Select
           value={editData.client_id}
           onChange={(e) => handleEditChange('client_id', e.target.value)}
@@ -657,19 +666,57 @@ export default function OrdersPage() {
     <Button 
       onClick={() => setEditId(null)}
       disabled={isSaving}
-    >
+    >8
       Annuler
     </Button>
     <Button 
-      onClick={handleEditSave} 
+      onClick={handleEditSave}
       variant="contained"
+      color="primary"
       disabled={isSaving}
-      startIcon={isSaving ? <CircularProgress size={20} color="inherit" /> : null}
+      startIcon={isSaving ? <CircularProgress size={20} /> : null}
     >
       {isSaving ? 'Enregistrement...' : 'Enregistrer'}
     </Button>
   </DialogActions>
 </Dialog>
-    </Box>
+
+{/* Delete Confirmation Dialog */}
+<Dialog open={!!deleteId} onClose={() => !isDeleting && setDeleteId(null)}>
+  <DialogTitle>Confirmer la suppression</DialogTitle>
+  <DialogContent>
+    <Typography>Êtes-vous sûr de vouloir supprimer cette commande ?</Typography>
+  </DialogContent>
+  <DialogActions>
+    <Button onClick={() => setDeleteId(null)} disabled={isDeleting}>
+      Annuler
+    </Button>
+    <Button 
+      onClick={() => handleDelete(deleteId)}
+      color="error"
+      disabled={isDeleting}
+      startIcon={isDeleting ? <CircularProgress size={20} /> : null}
+    >
+      {isDeleting ? 'Suppression...' : 'Supprimer'}
+    </Button>
+  </DialogActions>
+</Dialog>
+
+{/* Snackbar for notifications */}
+<Snackbar
+  open={!!snackbar}
+  autoHideDuration={6000}
+  onClose={() => setSnackbar(null)}
+  anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+>
+  <Alert 
+    onClose={() => setSnackbar(null)} 
+    severity={snackbar?.severity || 'info'}
+    sx={{ width: '100%' }}
+  >
+    {snackbar?.message}
+  </Alert>
+</Snackbar>
+      </Box>
     );
-    }
+  }
