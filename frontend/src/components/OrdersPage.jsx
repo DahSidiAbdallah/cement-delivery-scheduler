@@ -12,6 +12,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import api from '../services/api';
+import RefreshIcon from '@mui/icons-material/Refresh';
 
 const statusColors = {
   'Pending': 'warning',
@@ -55,7 +56,9 @@ export default function OrdersPage() {
   const loadOrders = useCallback(async () => {
     try {
       const response = await api.get('/orders');
-      setOrders(response.data);
+      // Filter out delivered orders from the list
+      const filteredOrders = response.data.filter(order => order.status !== 'Livrée');
+      setOrders(filteredOrders);
     } catch (error) {
       console.error('Error loading orders:', error);
       setSnackbar({ message: 'Erreur lors du chargement des commandes', severity: 'error' });
@@ -355,6 +358,14 @@ export default function OrdersPage() {
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4">Gestion des Commandes</Typography>
+        <Button 
+          variant="outlined" 
+          startIcon={<RefreshIcon />} 
+          onClick={loadAllData}
+          disabled={isLoading}
+        >
+          Actualiser
+        </Button>
       </Box>
       
       <Paper sx={{ p: 3, mb: 3 }} elevation={2}>

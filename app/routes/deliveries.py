@@ -241,6 +241,23 @@ def update_delivery(delivery_id):
     if clash:
         return jsonify({"error": "Truck already booked for this time"}), 400
 
+    # Check if status is being updated to 'livrée' (delivered)
+    if 'status' in data and data['status'] == 'livrée':
+        # Get all orders associated with this delivery
+        order_links = DeliveryOrder.query.filter_by(delivery_id=delivery.id).all()
+        for link in order_links:
+            order = Order.query.get(link.order_id)
+            if order:
+                order.status = 'Livrée'  # Update order status to 'Livrée'
+                db.session.add(order)
+        
+        # Also handle the legacy single order_id if it exists
+        if delivery.order_id:
+            legacy_order = Order.query.get(delivery.order_id)
+            if legacy_order:
+                legacy_order.status = 'Livrée'
+                db.session.add(legacy_order)
+
     # 8) Commit
     try:
         db.session.commit()
