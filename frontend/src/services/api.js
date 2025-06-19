@@ -1,7 +1,17 @@
 import axios from 'axios';
 
+// Determine the API base URL based on the current host
+const getApiBaseUrl = () => {
+  // In development, use the current host but change the port to 5000
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return `http://${window.location.hostname}:5000`;
+  }
+  // In production or when accessed via IP, use the current host with port 5000
+  return `http://${window.location.hostname}:5000`;
+};
+
 const api = axios.create({
-  baseURL: 'http://localhost:5000', // The base URL for all API requests
+  baseURL: getApiBaseUrl(),
   headers: { 
     'Content-Type': 'application/json',
     'Accept': 'application/json'
