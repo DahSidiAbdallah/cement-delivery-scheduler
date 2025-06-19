@@ -55,14 +55,28 @@ const formatTimeForAPI = (time) => {
   }
   
   try {
-    // If time is in H:MM or HH:MM format, ensure HH:MM
+    // Handle time input format (HH:MM)
     if (/^\d{1,2}:\d{2}$/.test(time)) {
       const [hours, minutes] = time.split(':');
       return `${hours.padStart(2, '0')}:${minutes}`;
     }
+    // Handle time input with seconds (HH:MM:SS)
+    if (/^\d{1,2}:\d{2}:\d{2}$/.test(time)) {
+      const [hours, minutes] = time.split(':');
+      return `${hours.padStart(2, '0')}:${minutes}`;
+    }
+    // Handle other possible time formats
+    if (/^\d{1,2}h\d{2}$/.test(time)) {
+      const [hours, minutes] = time.replace('h', ':').split(':');
+      return `${hours.padStart(2, '0')}:${minutes}`;
+    }
+    if (/^\d{1,2}h\d{2}min$/.test(time)) {
+      const [hours, minutes] = time.replace('h', ':').replace('min', '').split(':');
+      return `${hours.padStart(2, '0')}:${minutes}`;
+    }
     
-    console.warn('Unsupported time format, returning as-is:', time);
-    return time;
+    console.warn('Unsupported time format, returning null for:', time);
+    return null;
   } catch (error) {
     console.error('Error formatting time:', error, 'Input:', time);
     return null;
@@ -99,7 +113,8 @@ export default function DeliveriesPage() {
     truck_id: '',
     scheduled_date: new Date(),
     scheduled_time: '',
-    status: 'en attente'
+    status: 'en attente',
+    destination: ''
   });
   const [truckCapacity, setTruckCapacity] = useState({ used: 0, total: 0, exceeded: false });
   const [deleteConfirmation, setDeleteConfirmation] = useState({ open: false, id: null });
@@ -221,12 +236,16 @@ export default function DeliveriesPage() {
         
         console.log('Setting order IDs for editing:', orderIds);
         
+        // Convert truck_id to string if it exists, or use empty string
+        const truckId = delivery.truck_id ? String(delivery.truck_id) : '';
+        
         setForm({
           order_ids: orderIds,
-          truck_id: delivery.truck_id || '',
+          truck_id: truckId,
           scheduled_date: scheduledDate,
           scheduled_time: delivery.scheduled_time || '',
-          status: delivery.status || 'en attente'
+          status: delivery.status || 'en attente',
+          destination: delivery.destination || ''
         });
         
         // If we have a truck ID, trigger capacity check
@@ -240,7 +259,8 @@ export default function DeliveriesPage() {
           truck_id: '',
           scheduled_date: new Date(),
           scheduled_time: '',
-          status: 'en attente'
+          status: 'en attente',
+          destination: ''
         });
         setTruckCapacity({ used: 0, total: 0, exceeded: false });
       }
@@ -349,24 +369,8 @@ export default function DeliveriesPage() {
     }
   }, [dependencies.trucks, calculateTotalQuantity]);
 
+  // Validate form fields
   const validateForm = () => {
-    // Check if order_ids is an array and has at least one valid ID
-    const orderIds = Array.isArray(form.order_ids) 
-      ? form.order_ids.filter(id => id != null && id !== '')
-      : [];
-      
-    if (orderIds.length === 0) {
-      return { valid: false, message: 'Veuillez sélectionner au moins une commande valide' };
-    }
-    
-    if (!form.truck_id) {
-      return { valid: false, message: 'Veuillez sélectionner un camion' };
-    }
-    
-    if (!form.scheduled_date) {
-      return { valid: false, message: 'Veuillez sélectionner une date de livraison' };
-    }
-    
     // Validate date is not in the past
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -380,22 +384,30 @@ export default function DeliveriesPage() {
     
     // If time is provided, validate it
     if (form.scheduled_time) {
-      // First validate the time format
-      if (!/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(form.scheduled_time)) {
+      // First validate the time format (accepts both HH:MM and HH:MM:SS)
+      const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/;
+      if (!timeRegex.test(form.scheduled_time)) {
         return { valid: false, message: 'Format d\'heure invalide. Utilisez le format HH:MM.' };
       }
+      
+      // Extract hours and minutes (handle both HH:MM and HH:MM:SS formats)
+      const [hours, minutes] = form.scheduled_time.split(':');
       
       // Check if the time is in the past for today
       const now = new Date();
       if (selectedDate.getTime() === today.getTime()) {
-        const [hours, minutes] = form.scheduled_time.split(':').map(Number);
         const deliveryTime = new Date();
-        deliveryTime.setHours(hours, minutes, 0, 0);
+        deliveryTime.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
         
         if (deliveryTime < now) {
           return { valid: false, message: 'L\'heure de livraison ne peut pas être dans le passé' };
         }
       }
+    }
+    
+    // Validate destination
+    if (!form.destination || form.destination.trim() === '') {
+      return { valid: false, message: 'Veuillez spécifier une destination' };
     }
     
     return { valid: true };
@@ -545,12 +557,20 @@ export default function DeliveriesPage() {
           order_id: orderIds[0],
           order_ids: orderIds 
         }),
-        // Always include truck_id, even if null
-        truck_id: form.truck_id || null,
         scheduled_date: formatDateForAPI(form.scheduled_date || new Date()),
         scheduled_time: form.scheduled_time ? formatTimeForAPI(form.scheduled_time) : null,
-        status: form.status || 'en attente'
+        status: form.status || 'en attente',
+        destination: form.destination || ''
       };
+      
+      // Handle truck_id - always include it in the payload when updating
+      // Convert empty string to null for the backend
+      if (editDelivery) {
+        payload.truck_id = form.truck_id || null;
+      } else if (form.truck_id) {
+        // For new deliveries, only include if it has a value
+        payload.truck_id = form.truck_id;
+      }
       
       // If we're updating and have no orders, explicitly set empty array
       if (editDelivery && orderIds.length === 0) {
@@ -583,7 +603,8 @@ export default function DeliveriesPage() {
         truck_id: '',
         scheduled_date: new Date(),
         scheduled_time: '',
-        status: 'en attente'
+        status: 'en attente',
+        destination: ''
       });
       
     } catch (error) {
@@ -773,6 +794,7 @@ export default function DeliveriesPage() {
                 <TableCell>Commandes</TableCell>
                 <TableCell>Camion</TableCell>
                 <TableCell>Date Prévue</TableCell>
+                <TableCell>Destination</TableCell>
                 <TableCell>Statut</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
@@ -788,6 +810,7 @@ export default function DeliveriesPage() {
                     </TableCell>
                     <TableCell>{getTruckDetails(delivery.truck_id)}</TableCell>
                     <TableCell>{formatDateForDisplay(delivery.scheduled_date)}</TableCell>
+                    <TableCell>{delivery.destination || 'Non spécifiée'}</TableCell>
                     <TableCell>
                       <Chip 
                         label={delivery.status}
@@ -888,7 +911,17 @@ export default function DeliveriesPage() {
                 label="Heure (HH:MM)"
                 type="time"
                 value={form.scheduled_time || ''}
-                onChange={(e) => setForm({ ...form, scheduled_time: e.target.value })}
+                onChange={(e) => {
+                  // Ensure consistent time format (HH:MM)
+                  const timeValue = e.target.value;
+                  if (timeValue) {
+                    const [hours, minutes] = timeValue.split(':');
+                    const formattedTime = `${hours.padStart(2, '0')}:${minutes}`;
+                    setForm({ ...form, scheduled_time: formattedTime });
+                  } else {
+                    setForm({ ...form, scheduled_time: '' });
+                  }
+                }}
                 fullWidth
                 margin="normal"
                 disabled={isSaving}
@@ -898,6 +931,7 @@ export default function DeliveriesPage() {
                 inputProps={{
                   step: 300, // 5 min
                 }}
+                placeholder="HH:MM"
               />
             </Box>
           </LocalizationProvider>
@@ -915,6 +949,15 @@ export default function DeliveriesPage() {
               ))}
             </Select>
           </FormControl>
+          <TextField
+            label="Destination"
+            value={form.destination || ''}
+            onChange={(e) => setForm({ ...form, destination: e.target.value })}
+            fullWidth
+            margin="normal"
+            required
+            disabled={isSaving}
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)} disabled={isSaving}>Annuler</Button>

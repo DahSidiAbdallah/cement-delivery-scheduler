@@ -45,7 +45,7 @@ class Delivery(db.Model):
     scheduled_date = db.Column(db.Date)
     scheduled_time = db.Column(db.Time)
     status = db.Column(db.String(20), default="Scheduled")
-
+    destination = db.Column(db.String(200), nullable=False)
     orders = db.relationship('Order', secondary='delivery_orders', backref='deliveries')
     order_links = db.relationship('DeliveryOrder', backref='delivery', cascade='all, delete-orphan')
 
