@@ -1,5 +1,8 @@
 // src/components/Layout.jsx
-import React from 'react';
+import React, { useMemo, useContext } from 'react';
+import { globalStyles } from '../theme';
+import MAFCILogo from '../assets/MAFCI.png';
+import { AuthContext } from '../contexts/AuthContext';
 import {
   AppBar,
   Toolbar,
@@ -9,109 +12,266 @@ import {
   Drawer,
   List,
   ListItemButton,
+  ListItemIcon,
+  ListItemText,
   Divider,
-  Paper
+  Paper,
+  useMediaQuery,
+  useTheme,
+  IconButton,
+  Tooltip,
+  Avatar,
+  CssBaseline
 } from '@mui/material';
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import DashboardIcon from '@mui/icons-material/Dashboard';
-import PeopleIcon from '@mui/icons-material/People';
-import Inventory2Icon from '@mui/icons-material/Inventory2';
-import LocalShippingIcon from '@mui/icons-material/LocalShipping';
-import AssignmentIcon from '@mui/icons-material/Assignment';
-import LocalMallIcon from '@mui/icons-material/LocalMall';
-import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
-import MAFCILogo from '../assets/MAFCI.png';
+import {
+  Dashboard as DashboardIcon,
+  People as PeopleIcon,
+  Inventory2 as Inventory2Icon,
+  LocalShipping as LocalShippingIcon,
+  Assignment as AssignmentIcon,
+  LocalMall as LocalMallIcon,
+  CalendarMonth as CalendarMonthIcon,
+  Menu as MenuIcon,
+  Logout as LogoutIcon
+} from '@mui/icons-material';
+
+const drawerWidth = 240;
+
+const navItems = [
+  { 
+    label: 'Tableau de bord', 
+    to: '/dashboard', 
+    icon: <DashboardIcon />,
+    roles: ['admin'] // Only show dashboard to admins
+  },
+  { 
+    label: 'Clients', 
+    to: '/clients', 
+    icon: <PeopleIcon />,
+    roles: ['admin'] // Only show to admins
+  },
+  { 
+    label: 'Produits', 
+    to: '/products', 
+    icon: <Inventory2Icon />,
+    roles: ['admin'] // Only show to admins
+  },
+  { 
+    label: 'Camions', 
+    to: '/trucks', 
+    icon: <LocalShippingIcon />,
+    roles: ['admin'] // Only show to admins
+  },
+  { 
+    label: 'Commandes', 
+    to: '/orders', 
+    icon: <AssignmentIcon />,
+    roles: ['admin', 'viewer'] // Show to both roles
+  },
+  { 
+    label: 'Livraisons', 
+    to: '/deliveries', 
+    icon: <LocalMallIcon />,
+    roles: ['admin', 'viewer'] // Show to both roles
+  },
+  { 
+    label: 'Calendrier', 
+    to: '/schedule', 
+    icon: <CalendarMonthIcon />,
+    roles: ['admin', 'viewer'] // Show to both roles
+  },
+];
 
 export default function Layout() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const [mobileOpen, setMobileOpen] = React.useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const { role = 'viewer' } = useContext(AuthContext) || {};
 
+  const handleDrawerToggle = () => {
+    setMobileOpen(!mobileOpen);
+  };
+
+  const { onLogout } = useContext(AuthContext) || {};
   const logout = () => {
     localStorage.removeItem('access_token');
+    localStorage.removeItem('role');
+    if (onLogout) onLogout();
     navigate('/');
   };
 
-  const navItems = [
-    { label: 'Tableau de bord',   to: '/dashboard',   icon: <DashboardIcon color="primary" /> },
-    { label: 'Clients',     to: '/clients',     icon: <PeopleIcon color="primary" /> },
-    { label: 'Produits',    to: '/products',    icon: <Inventory2Icon color="secondary" /> },
-    { label: 'Camions',      to: '/trucks',      icon: <LocalShippingIcon color="success" /> },
-    { label: 'Commandes',      to: '/orders',      icon: <AssignmentIcon color="warning" /> },
-    { label: 'Livraisons',  to: '/deliveries',  icon: <LocalMallIcon color="info" /> },
-    { label: 'Calendrier',    to: '/schedule',    icon: <CalendarMonthIcon color="error" /> },
-  ];
+  // Filter nav items based on user role
+  const filteredNavItems = navItems.filter(item => {
+    // If no roles specified, show to all
+    if (!item.roles) return true;
+    // Check if user's role is in the allowed roles for this item
+    return item.roles.includes(role);
+  });
+
+
+  const drawer = (
+    <Box sx={{ overflow: 'auto' }}>
+      <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <img 
+          src={MAFCILogo} 
+          alt="MAFCI Logo" 
+          style={{ 
+            height: 50, 
+            margin: '0 auto',
+            display: 'block',
+            filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))'
+          }} 
+        />
+      </Box>
+      <Divider />
+      <List>
+        {filteredNavItems.map((item) => (
+          <ListItemButton
+            key={item.to}
+            component={Link}
+            to={item.to}
+            selected={location.pathname === item.to}
+            onClick={isMobile ? handleDrawerToggle : undefined}
+            sx={{
+              py: 1.5,
+              px: 3,
+              mb: 1,
+              mx: 1,
+              borderRadius: 2,
+              color: theme.palette.text.primary,
+              '&.Mui-selected': {
+                backgroundColor: theme.palette.primary.light,
+                color: theme.palette.primary.contrastText,
+                '&:hover': {
+                  backgroundColor: theme.palette.primary.main,
+                },
+                '& .MuiListItemIcon-root': {
+                  color: theme.palette.primary.contrastText,
+                }
+              },
+              '&:hover': {
+                backgroundColor: theme.palette.action.hover,
+              },
+            }}
+          >
+            <ListItemIcon sx={{ minWidth: 40 }}>
+              {React.cloneElement(item.icon, {
+                color: location.pathname === item.to ? 'inherit' : 'action'
+              })}
+            </ListItemIcon>
+            <ListItemText 
+              primary={item.label} 
+              primaryTypographyProps={{
+                fontWeight: 500,
+                variant: 'body2',
+              }} 
+            />
+          </ListItemButton>
+        ))}
+      </List>
+    </Box>
+  );
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)' }}>
-      {/* Top App Bar */}
-      <AppBar position="fixed" color="default" elevation={2} sx={{ zIndex: 1201 }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh', width: '100%' }}>
+      <CssBaseline />
+      
+      {/* App Bar */}
+      <AppBar
+        position="fixed"
+        sx={{
+          width: { md: `calc(100% - ${drawerWidth}px)` },
+          ml: { md: `${drawerWidth}px` },
+          bgcolor: 'background.paper',
+          color: 'text.primary',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+          zIndex: theme.zIndex.drawer + 1,
+        }}
+      >
         <Toolbar>
-          <Typography variant="h5" sx={{ flexGrow: 1, fontWeight: 700, color: 'primary.main', display: 'flex', alignItems: 'center' }}>
-            <img src={MAFCILogo} alt="MAFCI Logo" style={{ height: 50, marginRight: 12, verticalAlign: 'middle' }} />
-           
+          <IconButton
+            color="inherit"
+            aria-label="open drawer"
+            edge="start"
+            onClick={handleDrawerToggle}
+            sx={{ mr: 2, display: { md: 'none' }, color: 'text.primary' }}
+          >
+            <MenuIcon />
+          </IconButton>
+          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1, color: 'text.primary' }}>
+            {navItems.find(item => item.to === location.pathname)?.label || 'Tableau de bord'}
           </Typography>
-          <Button color="error" variant="contained" onClick={logout} sx={{ fontWeight: 600 }}>
-            Déconnexion
-          </Button>
+          <Tooltip title="Déconnexion">
+            <IconButton color="inherit" onClick={logout} sx={{ color: 'text.primary' }}>
+              <LogoutIcon />
+            </IconButton>
+          </Tooltip>
         </Toolbar>
       </AppBar>
 
-      {/* Side Drawer */}
-      <Drawer
-        variant="permanent"
+      {/* Sidebar Drawer */}
+      <Box
+        component="nav"
         sx={{
-          width: 220,
-          flexShrink: 0,
-          [`& .MuiDrawer-paper`]: {
-            width: 220,
-            boxSizing: 'border-box',
-            top: 64,
-            background: 'linear-gradient(180deg, #e3eafc 0%, #f5f7fa 100%)',
-            borderRight: '1px solid #e0e0e0',
-          },
+          width: { md: drawerWidth },
+          flexShrink: { md: 0 },
+          zIndex: theme.zIndex.drawer,
         }}
+        aria-label="menu items"
       >
-        <Toolbar />
-        <Divider />
-        <List>
-          {navItems.map((item) => (
-            <ListItemButton
-              key={item.to}
-              component={Link}
-              to={item.to}
-              selected={location.pathname === item.to}
-              sx={{
-                py: 2,
-                borderRadius: 2,
-                mb: 1,
-                mx: 1,
-                background: location.pathname === item.to ? '#e3eafc' : 'transparent',
-                '&:hover': { background: '#e3eafc' },
-                display: 'flex',
-                alignItems: 'center',
-                gap: 2,
-              }}
-            >
-              {item.icon}
-              <Typography fontWeight={600}>{item.label}</Typography>
-            </ListItemButton>
-          ))}
-        </List>
-      </Drawer>
+        <Drawer
+          variant={isMobile ? 'temporary' : 'permanent'}
+          open={isMobile ? mobileOpen : true}
+          onClose={handleDrawerToggle}
+          ModalProps={{
+            keepMounted: true, // Better open performance on mobile
+          }}
+          sx={{
+            '& .MuiDrawer-paper': {
+              width: drawerWidth,
+              boxSizing: 'border-box',
+              borderRight: 'none',
+              bgcolor: 'background.paper',
+              boxShadow: theme.shadows[3],
+              position: 'relative',
+              height: '100vh',
+              overflowY: 'auto',
+              ...globalStyles.scrollbar,
+            },
+          }}
+        >
+          {drawer}
+        </Drawer>
+      </Box>
 
       {/* Main Content */}
       <Box
         component="main"
         sx={{
           flexGrow: 1,
-          p: 4,
-          mt: 8,
-          ml: '220px',
-          minHeight: '100vh',
-          background: 'transparent',
+          width: { md: `calc(100% - ${drawerWidth}px)` },
+          ml: { md: `${drawerWidth}px` },
+          mt: '64px',
+          p: 3,
+          bgcolor: 'background.default',
+          minHeight: 'calc(100vh - 64px)',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
-        <Paper sx={{ p: 3, borderRadius: 3, boxShadow: 2, minHeight: '80vh', background: '#fff' }}>
+        <Paper
+          elevation={0}
+          sx={{
+            flex: 1,
+            p: 3,
+            borderRadius: 2,
+            bgcolor: 'background.paper',
+            overflow: 'auto',
+          }}
+        >
           <Outlet />
         </Paper>
       </Box>

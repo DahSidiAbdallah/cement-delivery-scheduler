@@ -1,5 +1,14 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import React, { useCallback, useState, useEffect } from 'react';
+import { Box, CircularProgress } from '@mui/material';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { ThemeProvider, CssBaseline } from '@mui/material';
+import { LocalizationProvider } from '@mui/x-date-pickers';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import fr from 'date-fns/locale/fr';
+import { SnackbarProvider, useSnackbar } from 'notistack';
+import theme from './theme';
+import ErrorBoundary from './components/ErrorBoundary';
+import { AuthContext } from './contexts/AuthContext';
 import Layout from './components/Layout';
 import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
@@ -9,25 +18,165 @@ import TrucksPage from './components/TrucksPage';
 import OrdersPage from './components/OrdersPage';
 import DeliveriesPage from './components/DeliveriesPage';
 import SchedulePage from './components/SchedulePage';
+import UsersPage from './components/UsersPage';
 
-function App() {
-  const token = localStorage.getItem('access_token');
+// Wrapper component to provide auth context and notifications
+const AppContent = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('access_token'));
+  const [isLoading, setIsLoading] = useState(true);
+  const { enqueueSnackbar } = useSnackbar();
+
+  // Check authentication status on initial load
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        setIsAuthenticated(false);
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        // Verify the token is still valid
+        await api.get('/auth/verify-token');
+        setIsAuthenticated(true);
+      } catch (error) {
+        console.error('Authentication check failed:', error);
+        localStorage.removeItem('access_token');
+        setIsAuthenticated(false);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, []);
+
+  // Global notification handler
+  const showNotification = useCallback((message, variant = 'info') => {
+    enqueueSnackbar(message, {
+      variant,
+      anchorOrigin: {
+        vertical: 'top',
+        horizontal: 'center',
+      },
+      autoHideDuration: variant === 'error' ? 6000 : 3000,
+    });
+  }, [enqueueSnackbar]);
+
+  // Update authentication state
+  const handleLogin = useCallback(() => {
+    setIsAuthenticated(true);
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem('access_token');
+    setIsAuthenticated(false);
+  }, []);
+
+  if (isLoading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<LoginPage />} />
-        <Route element={token ? <Layout /> : <Navigate to="/" />}>
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/clients" element={<ClientsPage />} />
-          <Route path="/products" element={<ProductsPage />} />
-          <Route path="/trucks" element={<TrucksPage />} />
-          <Route path="/orders" element={<OrdersPage />} />
-          <Route path="/deliveries" element={<DeliveriesPage />} />
-          <Route path="/schedule" element={<SchedulePage />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <AuthContext.Provider value={{ 
+        isAuthenticated, 
+        onLogin: handleLogin, 
+        onLogout: handleLogout, 
+        role: localStorage.getItem('role') || 'viewer' 
+      }}>
+        <Routes>
+          <Route 
+            path="/" 
+            element={
+              isAuthenticated ? (
+                <Navigate to="/dashboard" replace />
+              ) : (
+                <LoginPage 
+                  showNotification={showNotification} 
+                  onLoginSuccess={handleLogin} 
+                />
+              )
+            } 
+          />
+          <Route element={isAuthenticated ? <Layout onLogout={handleLogout} /> : <Navigate to="/" replace />}>
+            {/* Admin-only routes */}
+            <Route 
+              path="/dashboard" 
+              element={
+                localStorage.getItem('role') === 'admin' ? 
+                <Dashboard showNotification={showNotification} /> : 
+                <Navigate to="/orders" replace />
+              } 
+            />
+            <Route 
+              path="/clients" 
+              element={
+                localStorage.getItem('role') === 'admin' ? 
+                <ClientsPage showNotification={showNotification} /> : 
+                <Navigate to="/orders" replace />
+              } 
+            />
+            <Route 
+              path="/products" 
+              element={
+                localStorage.getItem('role') === 'admin' ? 
+                <ProductsPage showNotification={showNotification} /> : 
+                <Navigate to="/orders" replace />
+              } 
+            />
+            <Route 
+              path="/trucks" 
+              element={
+                localStorage.getItem('role') === 'admin' ? 
+                <TrucksPage showNotification={showNotification} /> : 
+                <Navigate to="/orders" replace />
+              } 
+            />
+            <Route 
+              path="/users" 
+              element={
+                localStorage.getItem('role') === 'admin' ? 
+                <UsersPage showNotification={showNotification} /> : 
+                <Navigate to="/orders" replace />
+              } 
+            />
+            
+            {/* Routes accessible to both admin and viewer */}
+            <Route path="/orders" element={<OrdersPage showNotification={showNotification} />} />
+            <Route path="/deliveries" element={<DeliveriesPage showNotification={showNotification} />} />
+            <Route path="/schedule" element={<SchedulePage showNotification={showNotification} autoRefresh={localStorage.getItem('role') === 'viewer'} />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AuthContext.Provider>
+    </ErrorBoundary>
+  );
+};
+
+function App() {
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
+        <SnackbarProvider
+          maxSnack={3}
+          anchorOrigin={{
+            vertical: 'top',
+            horizontal: 'center',
+          }}
+          autoHideDuration={4000}
+          preventDuplicate
+        >
+          <AppContent />
+        </SnackbarProvider>
+      </LocalizationProvider>
+    </ThemeProvider>
   );
 }
 

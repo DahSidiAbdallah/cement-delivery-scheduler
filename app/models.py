@@ -39,11 +39,22 @@ class Order(db.Model):
 class Delivery(db.Model):
     __tablename__ = 'deliveries'
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    order_id = db.Column(UUID(as_uuid=True), db.ForeignKey('orders.id'), nullable=False)
+    # Single order_id kept for backward compatibility but optional
+    order_id = db.Column(UUID(as_uuid=True), db.ForeignKey('orders.id'), nullable=True)
     truck_id = db.Column(UUID(as_uuid=True), db.ForeignKey('trucks.id'))
     scheduled_date = db.Column(db.Date)
     scheduled_time = db.Column(db.Time)
     status = db.Column(db.String(20), default="Scheduled")
+    destination = db.Column(db.String(200), nullable=False)
+    notes = db.Column(db.Text, nullable=True)
+    orders = db.relationship('Order', secondary='delivery_orders', backref='deliveries')
+    order_links = db.relationship('DeliveryOrder', backref='delivery', cascade='all, delete-orphan')
+
+
+class DeliveryOrder(db.Model):
+    __tablename__ = 'delivery_orders'
+    delivery_id = db.Column(UUID(as_uuid=True), db.ForeignKey('deliveries.id'), primary_key=True)
+    order_id = db.Column(UUID(as_uuid=True), db.ForeignKey('orders.id'), primary_key=True)
 
 class User(db.Model):
     __tablename__ = 'users'

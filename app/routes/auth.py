@@ -42,7 +42,7 @@ def login():
         if user and user.check_password(data['password']):
             access_token = create_access_token(identity=str(user.id))  # Use string for identity
             logging.info(f"User logged in: {user.username}")
-            return jsonify(access_token=access_token), 200
+            return jsonify(access_token=access_token, role=user.role), 200
         logging.warning(f"Invalid login attempt for username: {data.get('username')}")
         return jsonify({"message": "Invalid credentials"}), 401
     except Exception as e:

@@ -10,13 +10,19 @@ bp.strict_slashes = False
 @bp.route('/deliveries', methods=['GET'])
 @jwt_required()
 def get_schedule():
-    orders = Order.query.filter_by(status='Pending').all()
+    # Get all pending orders
+    pending_orders = Order.query.filter_by(status='Pending').all()
     trucks = Truck.query.all()
-
     from app.models import Client
 
+    # Calculate total pending quantity
+    total_pending = sum(o.quantity for o in pending_orders)
+    total_capacity = sum(t.capacity for t in trucks)
+    daily_limit = current_app.config.get('DAILY_PRODUCTION_LIMIT', 800)
+
+    # Prepare data for optimization
     orders_data = []
-    for o in orders:
+    for o in pending_orders:
         client = Client.query.get(o.client_id)
         orders_data.append({
             'id': str(o.id),
@@ -25,15 +31,31 @@ def get_schedule():
         })
 
     trucks_data = [{
-        'id':       str(t.id),
+        'id': str(t.id),
+        'plate_number': t.plate_number,
         'capacity': t.capacity
     } for t in trucks]
 
-    daily_limit = current_app.config.get('DAILY_PRODUCTION_LIMIT', 800)
-
+    # Run optimization
     result = optimize_schedule(orders_data, trucks_data, daily_limit)
 
-    return jsonify({'schedule': result}), 200
+    # Calculate some stats
+    scheduled_orders = sum(len(t['orders']) for t in result)
+    scheduled_quantity = sum(t['load'] for t in result)
+
+    return jsonify({
+        'schedule': result,
+        'stats': {
+            'total_pending_orders': len(pending_orders),
+            'total_pending_quantity': total_pending,
+            'total_trucks': len(trucks),
+            'total_capacity': total_capacity,
+            'daily_limit': daily_limit,
+            'scheduled_orders': scheduled_orders,
+            'scheduled_quantity': scheduled_quantity,
+            'trucks_utilized': len([t for t in result if t['orders']])
+        }
+    }), 200
 
 
 @bp.route('/export', methods=['GET'])
@@ -49,7 +71,7 @@ def export_schedule():
     products = {str(p.id): p for p in Product.query.all()}
 
     # Regenerate the schedule (same as the planning)
-    daily_limit = current_app.config.get('DAILY_PRODUCTION_LIMIT', 1000)
+    daily_limit = current_app.config.get('DAILY_PRODUCTION_LIMIT', 800)
     # Use pending orders only (or all, as needed)
     schedule_result = optimize_schedule(
         [
