@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Typography, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, IconButton, Button, Dialog, DialogTitle, DialogContent,
@@ -21,21 +21,32 @@ export default function UsersPage({ showNotification }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    fetchUsers();
+  const fetchUsers = useCallback(async () => {
+    try {
+      const response = await api.get('/users');
+      setUsers(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      const errorMessage = error.response?.data?.message || 'Erreur lors du chargement des utilisateurs';
+      setError(errorMessage);
+      showNotification(errorMessage, 'error');
+    }
   }, []);
 
-  const fetchUsers = async () => {
-    setIsLoading(true);
-    try {
-      const res = await api.get('/users');
-      setUsers(res.data);
-    } catch (err) {
-      setError("Erreur lors du chargement des utilisateurs");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        await fetchUsers();
+      } catch (error) {
+        console.error('Error in loadData:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    loadData();
+  }, [fetchUsers]);
 
   const handleOpenDialog = (user = null) => {
     setEditUser(user);
@@ -60,19 +71,32 @@ export default function UsersPage({ showNotification }) {
       setError('Nom d\'utilisateur et mot de passe requis');
       return;
     }
+    
     setSaving(true);
+    setError('');
+    
     try {
+      const userData = {
+        username: form.username.trim(),
+        role: form.role,
+        ...(form.password ? { password: form.password } : {})
+      };
+      
       if (editUser) {
-        await api.put(`/users/${editUser.id}`, { username: form.username, role: form.role, password: form.password || undefined });
-        showNotification('Utilisateur modifié', 'success');
+        await api.put(`/users/${editUser.id}`, userData);
+        showNotification('Utilisateur modifié avec succès', 'success');
       } else {
-        await api.post('/users', form);
-        showNotification('Utilisateur ajouté', 'success');
+        await api.post('/users', userData);
+        showNotification('Utilisateur ajouté avec succès', 'success');
       }
+      
       handleCloseDialog();
-      fetchUsers();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Erreur lors de la sauvegarde');
+      await fetchUsers();
+    } catch (error) {
+      console.error('Error saving user:', error);
+      const errorMessage = error.response?.data?.message || 'Erreur lors de la sauvegarde de l\'utilisateur';
+      setError(errorMessage);
+      showNotification(errorMessage, 'error');
     } finally {
       setSaving(false);
     }

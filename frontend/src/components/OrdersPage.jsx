@@ -1,5 +1,6 @@
 // src/components/OrdersPage.jsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useContext } from 'react';
+import { AuthContext } from '../contexts/AuthContext';
 import {
   Box, TextField, Button, Paper,
   Typography, MenuItem, Select,
@@ -20,6 +21,8 @@ const statusColors = {
 };
 
 export default function OrdersPage() {
+  const { role } = useContext(AuthContext);
+  const isViewer = role === 'viewer';
   const [orders, setOrders] = useState([]);
   const [clients, setClients] = useState([]);
   const [products, setProducts] = useState([]);
@@ -376,99 +379,101 @@ export default function OrdersPage() {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Paper sx={{ p: 3, mb: 3 }} elevation={2}>
-        <Typography variant="h6" gutterBottom>Nouvelle Commande</Typography>
-        <Box display="flex" gap={2} flexWrap="wrap" alignItems="flex-end">
-          <FormControl size="small" sx={{ minWidth: 200 }} disabled={isSaving}>
-            <InputLabel>Client *</InputLabel>
-          <Select
-            value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-            label="Client"
-          >
-            {clients.map(client => (
-              <MenuItem key={client.id} value={client.id}>
-                {client.name}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+      {!isViewer && (
+        <Paper sx={{ p: 2, mb: 2 }}>
+          <Typography variant="h6" sx={{ mb: 2 }}>Nouvelle Commande</Typography>
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            <FormControl size="small" sx={{ minWidth: 200 }} disabled={isSaving}>
+              <InputLabel>Client *</InputLabel>
+              <Select
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+                label="Client"
+              >
+                {clients.map(client => (
+                  <MenuItem key={client.id} value={client.id}>
+                    {client.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
 
-        <FormControl size="small" sx={{ minWidth: 200 }} disabled={isSaving}>
-          <InputLabel>Produit *</InputLabel>
-          <Select
-            value={productId}
-            onChange={(e) => setProductId(e.target.value)}
-            label="Produit"
-          >
-            {products.map(product => (
-              <MenuItem key={product.id} value={product.id}>
-                {product.name}{product.type ? ` (${product.type})` : ''}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+            <FormControl size="small" sx={{ minWidth: 200 }} disabled={isSaving}>
+              <InputLabel>Produit *</InputLabel>
+              <Select
+                value={productId}
+                onChange={(e) => setProductId(e.target.value)}
+                label="Produit"
+              >
+                {products.map(product => (
+                  <MenuItem key={product.id} value={product.id}>
+                    {product.name}{product.type ? ` (${product.type})` : ''}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
 
-        <TextField
-          label="Quantité (tonnes) *"
-          type="number"
-          value={quantity}
-          onChange={(e) => setQuantity(e.target.value)}
-          size="small"
-          sx={{ width: 150 }}
-          disabled={isSaving}
-          inputProps={{ min: 0, step: 0.01 }}
-        />
+            <TextField
+              label="Quantité (tonnes) *"
+              type="number"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              size="small"
+              sx={{ width: 150 }}
+              disabled={isSaving}
+              inputProps={{ min: 0, step: 0.01 }}
+            />
 
-        <TextField
-          label="Date de Commande *"
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          InputLabelProps={{
-            shrink: true,
-          }}
-          size="small"
-          disabled={isSaving}
-        />
+            <TextField
+              label="Date de Commande *"
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              InputLabelProps={{
+                shrink: true,
+              }}
+              size="small"
+              disabled={isSaving}
+            />
 
-        <TextField
-          label="Heure de Commande"
-          type="time"
-          value={time}
-          onChange={(e) => setTime(e.target.value)}
-          InputLabelProps={{
-            shrink: true,
-          }}
-          size="small"
-          disabled={isSaving}
-        />
+            <TextField
+              label="Heure de Commande"
+              type="time"
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              InputLabelProps={{
+                shrink: true,
+              }}
+              size="small"
+              disabled={isSaving}
+            />
 
-        <Button 
-          variant="contained" 
-          onClick={handleAdd}
-          disabled={!clientId || !productId || !quantity || !date || isSaving}
-          startIcon={isSaving ? <CircularProgress size={20} color="inherit" /> : <AddIcon />}
-        >
-          {isSaving ? 'Ajout...' : 'Ajouter'}
-        </Button>
-      </Box>
-    </Paper>
+            <Button 
+              variant="contained" 
+              onClick={handleAdd}
+              disabled={!clientId || !productId || !quantity || !date || isSaving}
+              startIcon={isSaving ? <CircularProgress size={20} color="inherit" /> : <AddIcon />}
+            >
+              {isSaving ? 'Ajout...' : 'Ajouter'}
+            </Button>
+          </Box>
+        </Paper>
+      )}
 
-    <Paper sx={{ p: 2, overflow: 'auto' }} elevation={2}>
-      <TableContainer sx={{ maxHeight: 'calc(100vh - 300px)' }}>
-        <Table stickyHeader size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell sx={{ minWidth: 120 }}>Client</TableCell>
-              <TableCell sx={{ minWidth: 120 }}>Produit</TableCell>
-              <TableCell sx={{ minWidth: 80 }}>Quantité</TableCell>
-              <TableCell sx={{ minWidth: 100 }}>Date</TableCell>
-              <TableCell sx={{ minWidth: 80 }}>Heure</TableCell>
-              <TableCell sx={{ minWidth: 100 }}>Statut</TableCell>
-              <TableCell sx={{ minWidth: 100 }}>Actions</TableCell>
-            </TableRow>
-          </TableHead>
+      <Paper sx={{ p: 2, overflow: 'auto' }} elevation={2}>
+        <TableContainer sx={{ maxHeight: 'calc(100vh - 300px)' }}>
+          <Table stickyHeader size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ minWidth: 120 }}>Client</TableCell>
+                <TableCell sx={{ minWidth: 120 }}>Produit</TableCell>
+                <TableCell sx={{ minWidth: 80 }}>Quantité</TableCell>
+                <TableCell sx={{ minWidth: 100 }}>Date</TableCell>
+                <TableCell sx={{ minWidth: 80 }}>Heure</TableCell>
+                <TableCell sx={{ minWidth: 100 }}>Statut</TableCell>
+                <TableCell sx={{ minWidth: 100 }}>Actions</TableCell>
+              </TableRow>
+            </TableHead>
             <TableBody>
               {orders.length > 0 ? (
                 orders.map(order => {
@@ -495,26 +500,28 @@ export default function OrdersPage() {
                         />
                       </TableCell>
                       <TableCell>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                          <IconButton 
-                            color="primary" 
-                            onClick={() => handleEditOpen(order)}
-                            size="small"
-                            disabled={isSaving}
-                            sx={{ '&:hover': { bgcolor: 'primary.light', color: 'white' } }}
-                          >
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                          <IconButton 
-                            color="error" 
-                            onClick={() => setDeleteId(order.id)}
-                            size="small"
-                            disabled={isDeleting}
-                            sx={{ '&:hover': { bgcolor: 'error.light', color: 'white' } }}
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </Box>
+                        {!isViewer && (
+                          <Box sx={{ display: 'flex', gap: 1 }}>
+                            <IconButton 
+                              color="primary" 
+                              onClick={() => handleEditOpen(order)}
+                              size="small"
+                              disabled={isSaving}
+                              sx={{ '&:hover': { bgcolor: 'primary.light', color: 'white' } }}
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton 
+                              color="error" 
+                              onClick={() => setDeleteId(order.id)}
+                              size="small"
+                              disabled={isDeleting}
+                              sx={{ '&:hover': { bgcolor: 'error.light', color: 'white' } }}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
@@ -577,146 +584,107 @@ export default function OrdersPage() {
           <Box sx={{ mt: 2 }}>
             <FormControl fullWidth size="small" sx={{ mb: 2 }} disabled={isSaving}>
               <InputLabel>Client *</InputLabel>
-        <Select
-          value={editData.client_id}
-          onChange={(e) => handleEditChange('client_id', e.target.value)}
-          label="Client"
-        >
-          {clients.map(client => (
-            <MenuItem key={client.id} value={client.id}>
-              {client.name}
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
-      
-      <FormControl fullWidth size="small" sx={{ mb: 2 }} disabled={isSaving}>
-        <InputLabel>Produit *</InputLabel>
-        <Select
-          value={editData.product_id}
-          onChange={(e) => handleEditChange('product_id', e.target.value)}
-          label="Produit"
-        >
-          {products.map(product => (
-            <MenuItem key={product.id} value={product.id}>
-              {product.name}{product.type ? ` (${product.type})` : ''}
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
-      
-      <TextField
-        label="Quantité (tonnes) *"
-        type="number"
-        value={editData.quantity}
-        onChange={(e) => handleEditChange('quantity', e.target.value)}
-        fullWidth
-        size="small"
-        disabled={isSaving}
-        inputProps={{ min: 0, step: 0.01 }}
-        sx={{ mb: 2 }}
-      />
-      
-      <TextField
-        label="Date de Commande *"
-        type="date"
-        value={editData.requested_date}
-        onChange={(e) => handleEditChange('requested_date', e.target.value)}
-        InputLabelProps={{ shrink: true }}
-        fullWidth
-        size="small"
-        disabled={isSaving}
-        sx={{ mb: 2 }}
-      />
-      
-      <TextField
-        label="Heure de Commande (optionnelle)"
-        type="time"
-        value={editData.requested_time || ''}
-        onChange={(e) => handleEditChange('requested_time', e.target.value || null)}
-        InputLabelProps={{ shrink: true }}
-        fullWidth
-        size="small"
-        disabled={isSaving}
-        sx={{ mb: 2 }}
-      />
-      
-      <FormControl fullWidth size="small" disabled={isSaving}>
-        <InputLabel>Statut</InputLabel>
-        <Select
-          value={editData.status}
-          onChange={(e) => handleEditChange('status', e.target.value)}
-          label="Statut"
-        >
-          {['Pending', 'annulée'].map((status) => (
-            <MenuItem key={status} value={status}>
-              <Chip 
-                label={status.charAt(0).toUpperCase() + status.slice(1)}
-                size="small"
-                color={status === 'annulée' ? 'error' : 'warning'}
-                sx={{ textTransform: 'capitalize' }}
-              />
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
-    </Box>
-  </DialogContent>
-  <DialogActions>
-    <Button 
-      onClick={() => setEditId(null)}
-      disabled={isSaving}
-    >8
-      Annuler
-    </Button>
-    <Button 
-      onClick={handleEditSave}
-      variant="contained"
-      color="primary"
-      disabled={isSaving}
-      startIcon={isSaving ? <CircularProgress size={20} /> : null}
-    >
-      {isSaving ? 'Enregistrement...' : 'Enregistrer'}
-    </Button>
-  </DialogActions>
-</Dialog>
-
-{/* Delete Confirmation Dialog */}
-<Dialog open={!!deleteId} onClose={() => !isDeleting && setDeleteId(null)}>
-  <DialogTitle>Confirmer la suppression</DialogTitle>
-  <DialogContent>
-    <Typography>Êtes-vous sûr de vouloir supprimer cette commande ?</Typography>
-  </DialogContent>
-  <DialogActions>
-    <Button onClick={() => setDeleteId(null)} disabled={isDeleting}>
-      Annuler
-    </Button>
-    <Button 
-      onClick={() => handleDelete(deleteId)}
-      color="error"
-      disabled={isDeleting}
-      startIcon={isDeleting ? <CircularProgress size={20} /> : null}
-    >
-      {isDeleting ? 'Suppression...' : 'Supprimer'}
-    </Button>
-  </DialogActions>
-</Dialog>
-
-{/* Snackbar for notifications */}
-<Snackbar
-  open={!!snackbar}
-  autoHideDuration={6000}
-  onClose={() => setSnackbar(null)}
-  anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
->
-  <Alert 
-    onClose={() => setSnackbar(null)} 
-    severity={snackbar?.severity || 'info'}
-    sx={{ width: '100%' }}
-  >
-    {snackbar?.message}
-  </Alert>
-</Snackbar>
+              <Select
+                value={editData.client_id}
+                onChange={(e) => handleEditChange('client_id', e.target.value)}
+                label="Client"
+              >
+                {clients.map(client => (
+                  <MenuItem key={client.id} value={client.id}>
+                    {client.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            
+            <FormControl fullWidth size="small" sx={{ mb: 2 }} disabled={isSaving}>
+              <InputLabel>Produit *</InputLabel>
+              <Select
+                value={editData.product_id}
+                onChange={(e) => handleEditChange('product_id', e.target.value)}
+                label="Produit"
+              >
+                {products.map(product => (
+                  <MenuItem key={product.id} value={product.id}>
+                    {product.name}{product.type ? ` (${product.type})` : ''}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            
+            <TextField
+              fullWidth
+              size="small"
+              label="Quantité (tonnes) *"
+              type="number"
+              value={editData.quantity}
+              onChange={(e) => handleEditChange('quantity', e.target.value)}
+              sx={{ mb: 2 }}
+              disabled={isSaving}
+              inputProps={{ min: 0, step: 0.01 }}
+            />
+            
+            <TextField
+              fullWidth
+              size="small"
+              label="Date de Commande *"
+              type="date"
+              value={editData.requested_date}
+              onChange={(e) => handleEditChange('requested_date', e.target.value)}
+              InputLabelProps={{
+                shrink: true,
+              }}
+              sx={{ mb: 2 }}
+              disabled={isSaving}
+            />
+            
+            <TextField
+              fullWidth
+              size="small"
+              label="Heure de Commande"
+              type="time"
+              value={editData.requested_time || ''}
+              onChange={(e) => handleEditChange('requested_time', e.target.value)}
+              InputLabelProps={{
+                shrink: true,
+              }}
+              sx={{ mb: 2 }}
+              disabled={isSaving}
+            />
+            
+            <FormControl fullWidth size="small" sx={{ mb: 2 }} disabled={isSaving}>
+              <InputLabel>Statut *</InputLabel>
+              <Select
+                value={editData.status}
+                onChange={(e) => handleEditChange('status', e.target.value)}
+                label="Statut"
+              >
+                <MenuItem value="En attente">En attente</MenuItem>
+                <MenuItem value="En cours">En cours</MenuItem>
+                <MenuItem value="Livrée">Livrée</MenuItem>
+                <MenuItem value="Annulée">Annulée</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => setEditId(null)}
+            disabled={isSaving}
+          >
+            Annuler
+          </Button>
+          <Button 
+            onClick={handleEditSave}
+            variant="contained"
+            color="primary"
+            disabled={isSaving}
+            startIcon={isSaving ? <CircularProgress size={20} /> : null}
+          >
+            {isSaving ? 'Enregistrement...' : 'Enregistrer'}
+          </Button>
+        </DialogActions>
+      </Dialog>
       </Box>
     );
   }

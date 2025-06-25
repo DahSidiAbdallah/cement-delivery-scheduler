@@ -9,11 +9,10 @@ bp = Blueprint('users', __name__, url_prefix='/users')
 bp.strict_slashes = False
 
 @bp.route('/', methods=['POST', 'OPTIONS'])
+@jwt_required()
 def create_user():
     if request.method == 'OPTIONS':
         return '', 200
-    from flask_jwt_extended import verify_jwt_in_request
-    verify_jwt_in_request()
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
         identity = get_jwt_identity()
@@ -34,11 +33,10 @@ def create_user():
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
 @bp.route('/', methods=['GET', 'OPTIONS'])
+@jwt_required()
 def get_users():
     if request.method == 'OPTIONS':
         return '', 200
-    from flask_jwt_extended import verify_jwt_in_request
-    verify_jwt_in_request()
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
         identity = get_jwt_identity()
@@ -57,11 +55,10 @@ def get_users():
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
 @bp.route('/<user_id>', methods=['PUT', 'OPTIONS'])
+@jwt_required()
 def update_user(user_id):
     if request.method == 'OPTIONS':
         return '', 200
-    from flask_jwt_extended import verify_jwt_in_request
-    verify_jwt_in_request()
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
         identity = get_jwt_identity()
@@ -84,11 +81,10 @@ def update_user(user_id):
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
 @bp.route('/<user_id>', methods=['DELETE', 'OPTIONS'])
+@jwt_required()
 def delete_user(user_id):
     if request.method == 'OPTIONS':
         return '', 200
-    from flask_jwt_extended import verify_jwt_in_request
-    verify_jwt_in_request()
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
         identity = get_jwt_identity()

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useContext } from 'react';
+import { AuthContext } from '../contexts/AuthContext';
 import {
   Box, Button, Typography, Paper, Table, TableBody, TableCell, TableContainer, 
   TableHead, TableRow, IconButton, Snackbar, Dialog, DialogTitle, DialogContent, 
@@ -120,6 +121,10 @@ export default function DeliveriesPage() {
   });
   const [truckCapacity, setTruckCapacity] = useState({ used: 0, total: 0, exceeded: false });
   const [deleteConfirmation, setDeleteConfirmation] = useState({ open: false, id: null });
+  
+  // Get user role from AuthContext
+  const { role } = useContext(AuthContext);
+  const isViewer = role === 'viewer';
 
   const loadDeliveries = useCallback(async () => {
     try {
@@ -786,9 +791,11 @@ export default function DeliveriesPage() {
           <Button variant="outlined" onClick={loadAllData} startIcon={<RefreshIcon />} disabled={isLoading} sx={{ mr: 1 }}>
             Rafraîchir
           </Button>
-          <Button variant="contained" onClick={() => handleOpenDialog()} startIcon={<AddIcon />} disabled={isLoading}>
-            Ajouter une livraison
-          </Button>
+          {!isViewer && (
+            <Button variant="contained" onClick={() => handleOpenDialog()} startIcon={<AddIcon />} disabled={isLoading}>
+              Ajouter une livraison
+            </Button>
+          )}
         </Box>
       </Box>
 
