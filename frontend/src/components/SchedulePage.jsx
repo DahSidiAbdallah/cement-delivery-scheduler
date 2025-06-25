@@ -20,7 +20,9 @@ const tableStyles = {
   cellBold: { fontWeight: "bold" }
 };
 
-export default function SchedulePage() {
+export default function SchedulePage({ autoRefresh = false }) {
+  const isAdmin = localStorage.getItem('role') === 'admin';
+  const isViewer = !isAdmin;
   const [schedule, setSchedule] = useState([]);
   const [scheduleStats, setScheduleStats] = useState(null);
   const [trucks, setTrucks] = useState([]);
@@ -34,10 +36,30 @@ export default function SchedulePage() {
   const [isExporting, setIsExporting] = useState(false);
   const [loadingError, setLoadingError] = useState(null);
 
+  // Auto-refresh data for viewers
+  useEffect(() => {
+    let intervalId;
+    
+    if (autoRefresh) {
+      // Refresh every 30 seconds
+      intervalId = setInterval(() => {
+        console.log('Auto-refreshing schedule data...');
+        loadData();
+      }, 30000);
+    }
+    
+    // Initial data load
+    loadData();
+    
+    // Cleanup interval on component unmount
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [autoRefresh]);
+
   // Load schedule and stats from localStorage on component mount
   useEffect(() => {
     const savedSchedule = localStorage.getItem('deliverySchedule');
-    const savedStats = localStorage.getItem('deliveryStats');
     
     if (savedSchedule) {
       try {
@@ -47,11 +69,14 @@ export default function SchedulePage() {
       }
     }
     
-    if (savedStats) {
-      try {
-        setScheduleStats(JSON.parse(savedStats));
-      } catch (e) {
-        console.error('Failed to parse saved stats', e);
+    if (isAdmin) {
+      const savedStats = localStorage.getItem('deliveryStats');
+      if (savedStats) {
+        try {
+          setScheduleStats(JSON.parse(savedStats));
+        } catch (e) {
+          console.error('Failed to parse saved stats', e);
+        }
       }
     }
     
@@ -288,45 +313,66 @@ export default function SchedulePage() {
   }
 
   return (
-    <Box p={3}>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">Planning des livraisons</Typography>
-        <Box display="flex" gap={2}>
-          <IconButton 
-            onClick={handleRefresh} 
-            color="primary"
-            disabled={isLoading}
-            title="Rafraîchir les données"
-          >
-            <RefreshIcon />
-          </IconButton>
-          <Button 
-            variant="contained" 
-            color="primary" 
-            onClick={generate}
-            disabled={isLoading || isGenerating}
-            startIcon={isGenerating ? <CircularProgress size={20} color="inherit" /> : null}
-          >
-            {isGenerating ? 'Génération...' : 'Générer le planning'}
-          </Button>
-          <Button 
-            variant="outlined" 
-            color="error"
-            onClick={clearSchedule}
-            disabled={isLoading || schedule.length === 0}
-          >
-            Effacer
-          </Button>
-          <Button 
-            variant="outlined" 
-            onClick={exportExcel} 
-            disabled={isLoading || isExporting || schedule.length === 0}
-            startIcon={isExporting ? <CircularProgress size={20} color="inherit" /> : null}
-          >
-            {isExporting ? 'Export en cours...' : 'Exporter en Excel'}
-          </Button>
+    <Box sx={{ p: 3 }}>
+      <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box>
+            <Typography variant="h5" component="h2" sx={{ display: 'inline', mr: 2 }}>
+              Planning de livraison
+            </Typography>
+            {isViewer && autoRefresh && (
+              <Chip 
+                label="Mise à jour automatique" 
+                size="small" 
+                color="info"
+                variant="outlined"
+              />
+            )}
+          </Box>
+          <Box>
+            <IconButton 
+              onClick={loadData} 
+              color="primary"
+              disabled={isLoading || isGenerating}
+              title="Rafraîchir les données"
+              sx={{ mr: 1 }}
+            >
+              <RefreshIcon />
+            </IconButton>
+            {isAdmin && (
+              <>
+                <Button 
+                  variant="contained" 
+                  color="primary" 
+                  onClick={generate}
+                  disabled={isLoading || isGenerating}
+                  startIcon={isGenerating ? <CircularProgress size={20} color="inherit" /> : null}
+                  sx={{ mr: 1 }}
+                >
+                  {isGenerating ? 'Génération...' : 'Générer le planning'}
+                </Button>
+                <Button 
+                  variant="outlined" 
+                  color="error"
+                  onClick={clearSchedule}
+                  disabled={isLoading || isGenerating || schedule.length === 0}
+                >
+                  Effacer le planning
+                </Button>
+              </>
+            )}
+            <Button 
+              variant="outlined" 
+              onClick={exportExcel} 
+              disabled={isLoading || isExporting || schedule.length === 0}
+              startIcon={isExporting ? <CircularProgress size={20} color="inherit" /> : null}
+              sx={{ ml: isAdmin ? 1 : 0 }}
+            >
+              {isExporting ? 'Export en cours...' : 'Exporter en Excel'}
+            </Button>
+          </Box>
         </Box>
-      </Box>
+      </Paper>
 
       <Box mb={3} display="flex" justifyContent="space-between" alignItems="center">
         <FormControl variant="outlined" size="small" sx={{ minWidth: 200 }} disabled={isLoading}>

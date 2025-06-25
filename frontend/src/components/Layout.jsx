@@ -39,23 +39,57 @@ import {
 const drawerWidth = 240;
 
 const navItems = [
-  { label: 'Tableau de bord', to: '/dashboard', icon: <DashboardIcon /> },
-  { label: 'Clients', to: '/clients', icon: <PeopleIcon /> },
-  { label: 'Produits', to: '/products', icon: <Inventory2Icon /> },
-  { label: 'Camions', to: '/trucks', icon: <LocalShippingIcon /> },
-  { label: 'Commandes', to: '/orders', icon: <AssignmentIcon /> },
-  { label: 'Livraisons', to: '/deliveries', icon: <LocalMallIcon /> },
-  { label: 'Calendrier', to: '/schedule', icon: <CalendarMonthIcon /> },
+  { 
+    label: 'Tableau de bord', 
+    to: '/dashboard', 
+    icon: <DashboardIcon />,
+    roles: ['admin'] // Only show dashboard to admins
+  },
+  { 
+    label: 'Clients', 
+    to: '/clients', 
+    icon: <PeopleIcon />,
+    roles: ['admin'] // Only show to admins
+  },
+  { 
+    label: 'Produits', 
+    to: '/products', 
+    icon: <Inventory2Icon />,
+    roles: ['admin'] // Only show to admins
+  },
+  { 
+    label: 'Camions', 
+    to: '/trucks', 
+    icon: <LocalShippingIcon />,
+    roles: ['admin'] // Only show to admins
+  },
+  { 
+    label: 'Commandes', 
+    to: '/orders', 
+    icon: <AssignmentIcon />,
+    roles: ['admin', 'viewer'] // Show to both roles
+  },
+  { 
+    label: 'Livraisons', 
+    to: '/deliveries', 
+    icon: <LocalMallIcon />,
+    roles: ['admin', 'viewer'] // Show to both roles
+  },
+  { 
+    label: 'Calendrier', 
+    to: '/schedule', 
+    icon: <CalendarMonthIcon />,
+    roles: ['admin', 'viewer'] // Show to both roles
+  },
 ];
 
 export default function Layout() {
-  // ...rest of code
-
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const { role = 'viewer' } = useContext(AuthContext) || {};
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -68,6 +102,14 @@ export default function Layout() {
     if (onLogout) onLogout();
     navigate('/');
   };
+
+  // Filter nav items based on user role
+  const filteredNavItems = navItems.filter(item => {
+    // If no roles specified, show to all
+    if (!item.roles) return true;
+    // Check if user's role is in the allowed roles for this item
+    return item.roles.includes(role);
+  });
 
 
   const drawer = (
@@ -86,7 +128,7 @@ export default function Layout() {
       </Box>
       <Divider />
       <List>
-        {navItems.map((item) => (
+        {filteredNavItems.map((item) => (
           <ListItemButton
             key={item.to}
             component={Link}

@@ -84,7 +84,12 @@ const AppContent = () => {
 
   return (
     <ErrorBoundary>
-      <AuthContext.Provider value={{ isAuthenticated, onLogin: handleLogin, onLogout: handleLogout, role: localStorage.getItem('role') || 'viewer' }}>
+      <AuthContext.Provider value={{ 
+        isAuthenticated, 
+        onLogin: handleLogin, 
+        onLogout: handleLogout, 
+        role: localStorage.getItem('role') || 'viewer' 
+      }}>
         <Routes>
           <Route 
             path="/" 
@@ -100,18 +105,52 @@ const AppContent = () => {
             } 
           />
           <Route element={isAuthenticated ? <Layout onLogout={handleLogout} /> : <Navigate to="/" replace />}>
-            <Route path="/dashboard" element={<Dashboard showNotification={showNotification} />} />
-            <Route path="/clients" element={<ClientsPage showNotification={showNotification} />} />
-            <Route path="/products" element={<ProductsPage showNotification={showNotification} />} />
-            <Route path="/trucks" element={<TrucksPage showNotification={showNotification} />} />
+            {/* Admin-only routes */}
+            <Route 
+              path="/dashboard" 
+              element={
+                localStorage.getItem('role') === 'admin' ? 
+                <Dashboard showNotification={showNotification} /> : 
+                <Navigate to="/orders" replace />
+              } 
+            />
+            <Route 
+              path="/clients" 
+              element={
+                localStorage.getItem('role') === 'admin' ? 
+                <ClientsPage showNotification={showNotification} /> : 
+                <Navigate to="/orders" replace />
+              } 
+            />
+            <Route 
+              path="/products" 
+              element={
+                localStorage.getItem('role') === 'admin' ? 
+                <ProductsPage showNotification={showNotification} /> : 
+                <Navigate to="/orders" replace />
+              } 
+            />
+            <Route 
+              path="/trucks" 
+              element={
+                localStorage.getItem('role') === 'admin' ? 
+                <TrucksPage showNotification={showNotification} /> : 
+                <Navigate to="/orders" replace />
+              } 
+            />
+            <Route 
+              path="/users" 
+              element={
+                localStorage.getItem('role') === 'admin' ? 
+                <UsersPage showNotification={showNotification} /> : 
+                <Navigate to="/orders" replace />
+              } 
+            />
+            
+            {/* Routes accessible to both admin and viewer */}
             <Route path="/orders" element={<OrdersPage showNotification={showNotification} />} />
             <Route path="/deliveries" element={<DeliveriesPage showNotification={showNotification} />} />
-            <Route path="/schedule" element={<SchedulePage showNotification={showNotification} />} />
-              <Route path="/users" element={
-                (localStorage.getItem('role') === 'admin') ?
-                  <UsersPage showNotification={showNotification} /> :
-                  <Navigate to="/dashboard" replace />
-              } />
+            <Route path="/schedule" element={<SchedulePage showNotification={showNotification} autoRefresh={localStorage.getItem('role') === 'viewer'} />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
