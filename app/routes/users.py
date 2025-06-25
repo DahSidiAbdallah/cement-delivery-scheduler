@@ -8,7 +8,7 @@ import uuid
 bp = Blueprint('users', __name__, url_prefix='/users')
 bp.strict_slashes = False
 
-@bp.route('/', methods=['POST', 'OPTIONS'])
+@bp.route('', methods=['POST', 'OPTIONS'])
 @jwt_required()
 def create_user():
     if request.method == 'OPTIONS':
@@ -32,7 +32,7 @@ def create_user():
         logging.exception("Exception occurred while creating user")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/', methods=['GET', 'OPTIONS'])
+@bp.route('', methods=['GET', 'OPTIONS'])
 @jwt_required()
 def get_users():
     if request.method == 'OPTIONS':
