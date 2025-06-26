@@ -754,8 +754,12 @@ export default function DeliveriesPage() {
       const client = dependencies.clients?.find(c => c && c.id === order.client_id);
       const product = dependencies.products?.find(p => p && p.id === order.product_id);
       
-      // Format the order details
-      return `${client?.name || 'Client inconnu'} (${order.quantity || 0}t - ${product?.name || 'Produit inconnu'}${product?.type ? ` - ${product.type}` : ''})`;
+      // Format the order date
+      const orderDate = order.requested_date ? new Date(order.requested_date) : null;
+      const formattedDate = orderDate ? format(orderDate, 'dd/MM/yyyy', { locale: fr }) : 'Date inconnue';
+      
+      // Format the order details with date
+      return `${client?.name || 'Client inconnu'} (${order.quantity || 0}t - ${product?.name || 'Produit inconnu'}${product?.type ? ` - ${product.type}` : ''}) - ${formattedDate}`;
     } catch (error) {
       console.error('Error in getOrderDetails:', error);
       return `Commande ${orderId} (erreur)`;
