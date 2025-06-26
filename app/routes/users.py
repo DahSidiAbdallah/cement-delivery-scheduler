@@ -19,11 +19,20 @@ def create_user():
         logging.debug(f"JWT identity: {identity}")
         data = request.get_json(force=True, silent=True)
         logging.debug(f"Received data: {data}")
-        new_user = User(
-            username=data['username'],
-            password_hash=data['password_hash'],  # We'll handle proper hashed passwords in Phase 4
-            role=data.get('role', 'commercial_manager')
-        )
+        
+        # Validate role
+        valid_roles = ['admin', 'viewer', 'expedition', 'commercial_manager']
+        role = data.get('role', 'commercial_manager')
+        if role not in valid_roles:
+            return jsonify({"error": f"Invalid role. Must be one of: {', '.join(valid_roles)}"}), 400
+            
+        new_user = User()
+        if 'username' in data:
+            new_user.username = data['username']
+        if 'role' in data:
+            new_user.role = data['role']
+        if 'password_hash' in data and data['password_hash']:  # Only update password if provided and not empty
+            new_user.set_password(data['password_hash'])
         db.session.add(new_user)
         db.session.commit()
         logging.info(f"User created with ID: {new_user.id}")
@@ -71,8 +80,12 @@ def update_user(user_id):
         if not user:
             return jsonify({"message": "User not found"}), 404
         data = request.get_json(force=True, silent=True)
-        user.username = data.get('username', user.username)
-        user.role = data.get('role', user.role)
+        if 'username' in data:
+            user.username = data['username']
+        if 'role' in data:
+            user.role = data['role']
+        if 'password_hash' in data and data['password_hash']:  # Only update password if provided and not empty
+            user.set_password(data['password_hash'])
         db.session.commit()
         logging.info(f"User updated with ID: {user.id}")
         return jsonify({"message": "User updated"}), 200

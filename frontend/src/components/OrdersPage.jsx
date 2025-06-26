@@ -16,8 +16,10 @@ import api from '../services/api';
 import RefreshIcon from '@mui/icons-material/Refresh';
 
 const statusColors = {
-  'Pending': 'warning',
-  'annulée': 'error'
+  'En attente': 'warning',
+  'Planifié': 'info',
+  'Livrée': 'success',
+  'Annulée': 'error'
 };
 
 export default function OrdersPage() {
@@ -52,7 +54,7 @@ export default function OrdersPage() {
     quantity: '',
     requested_date: new Date().toISOString().split('T')[0], // Today's date as default
     requested_time: '',
-    status: 'Pending'
+    status: 'En attente'
   };
   const [editData, setEditData] = useState(initialEditData);
 
@@ -261,7 +263,7 @@ export default function OrdersPage() {
       quantity: order.quantity ? order.quantity.toString() : '',
       requested_date: formattedDate,
       requested_time: order.requested_time ? order.requested_time.substring(0, 5) : '',
-      status: order.status || 'Pending'
+      status: order.status || 'En attente'
     };
     
     setEditData(editData);
@@ -305,7 +307,7 @@ export default function OrdersPage() {
         product_id: editData.product_id,
         quantity: parsedQuantity,
         requested_date: editData.requested_date,
-        status: editData.status || 'Pending'
+        status: editData.status || 'En attente'
       };
       
       // Handle time formatting - ensure HH:MM format
@@ -660,7 +662,7 @@ export default function OrdersPage() {
                 label="Statut"
               >
                 <MenuItem value="En attente">En attente</MenuItem>
-                <MenuItem value="En cours">En cours</MenuItem>
+                <MenuItem value="Planifié">Planifié</MenuItem>
                 <MenuItem value="Livrée">Livrée</MenuItem>
                 <MenuItem value="Annulée">Annulée</MenuItem>
               </Select>

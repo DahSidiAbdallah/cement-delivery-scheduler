@@ -45,7 +45,7 @@ def create_order():
             quantity=data['quantity'],
             requested_date=data['requested_date'],
             requested_time=data.get('requested_time'),
-            status=data.get('status', 'Pending')
+            status=data.get('status', 'En attente')
         )
         db.session.add(new_order)
         db.session.commit()
