@@ -265,11 +265,12 @@ def update_delivery(delivery_id):
         return jsonify({"error": "Invalid user ID format"}), 400
 
     status_changed = False
+    prev_status = delivery.status.lower() if delivery.status else ''
 
     new_status_raw = data.get('status')
     new_status = new_status_raw.lower() if new_status_raw else None
 
-    if new_status is not None and new_status != (delivery.status or '').lower():
+    if new_status is not None and new_status != prev_status:
         # Log the status change in history
         history = DeliveryHistory(
             delivery_id=delivery.id,
@@ -280,12 +281,11 @@ def update_delivery(delivery_id):
         db.session.add(history)
 
         # Update the status
-        old_status = delivery.status.lower() if delivery.status else ''
         delivery.status = new_status
         status_changed = True
 
         # Check if we need to set the delayed flag
-        if delivery.status in CANCELLED_STATUSES and old_status in ['programmé', 'en cours']:
+        if delivery.status in CANCELLED_STATUSES and prev_status in ['programmé', 'en cours']:
             delivery.delayed = True
     
     # Handle other simple scalar fields
@@ -379,14 +379,9 @@ def update_delivery(delivery_id):
         return jsonify({"error": "Truck already booked for this time"}), 400
 
     # Handle status changes and update associated orders
-    if 'status' in data:
-        new_status = data['status'].lower() if data['status'] else None
-        old_status = delivery.status.lower() if delivery.status else ''
-    else:
-        new_status = None
-        old_status = delivery.status.lower() if delivery.status else ''
-
-    if new_status and new_status != old_status:
+    if status_changed:
+        new_status = delivery.status.lower() if delivery.status else None
+        old_status = prev_status
         
         # Get all orders associated with this delivery
         order_links = DeliveryOrder.query.filter_by(delivery_id=delivery.id).all()
