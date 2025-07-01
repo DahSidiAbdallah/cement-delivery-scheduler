@@ -46,6 +46,8 @@ def create_delivery():
                 conv_ids.append(oid)
         order_ids = conv_ids
 
+        order_quantities = data.get('order_quantities', {})
+
         if 'truck_id' in data and isinstance(data['truck_id'], str):
             try:
                 data['truck_id'] = uuid.UUID(data['truck_id'])
@@ -139,18 +141,35 @@ def create_delivery():
         )
         db.session.add(history)
         
-        # Add order associations and update order statuses only when delivery is active
+        # Add order associations and handle quantity deductions
+        active_statuses = ['programmé', 'en cours']
         for oid in order_ids:
-            db.session.add(DeliveryOrder(delivery_id=new_delivery.id, order_id=oid))
-
             order = Order.query.get(oid)
+            if not order:
+                continue
 
-            if order and order.status and order.status.lower() == 'en attente' and status in ['programmé', 'en cours']:
+            qty = order_quantities.get(str(oid))
+            if qty is None:
+                qty = order.quantity
 
-        
+            try:
+                qty = float(qty)
+            except (ValueError, TypeError):
+                return jsonify({"error": f"Invalid quantity for order {oid}"}), 400
 
-                order.status = 'planifié'
+            if qty > order.quantity:
+                return jsonify({"error": f"Quantity {qty} exceeds remaining for order {oid}"}), 400
+
+            link = DeliveryOrder(delivery_id=new_delivery.id, order_id=oid, quantity=qty)
+
+            if status in active_statuses:
+                order.quantity -= qty
+                link.quantity_deducted = True
+                if order.status and order.status.lower() == 'en attente':
+                    order.status = 'planifié'
                 db.session.add(order)
+
+            db.session.add(link)
         
         db.session.commit()
         logging.info(f"Delivery created with ID: {new_delivery.id}")
@@ -160,6 +179,7 @@ def create_delivery():
             'id': str(new_delivery.id),
             'status': new_delivery.status,
             'delayed': new_delivery.delayed,
+            'order_quantities': {str(link.order_id): link.quantity for link in new_delivery.order_links},
             'history': [{
                 'id': history.id,
                 'status': history.status,
@@ -217,7 +237,8 @@ def get_deliveries():
                 'status': delivery.status,
                 'destination': delivery.destination,
                 'notes': delivery.notes,
-                'delayed': delivery.delayed
+                'delayed': delivery.delayed,
+                'order_quantities': {str(l.order_id): l.quantity for l in delivery.order_links}
             }
             
             # Add history if requested
@@ -312,10 +333,31 @@ def update_delivery(delivery_id):
             notes=' | '.join(change_notes)
         )
         db.session.add(history)
-        
+
         # Update the status
         delivery.status = new_status
         status_changed = True
+
+        # Adjust order quantities based on new status
+        active_statuses = ['programmé', 'en cours']
+        if new_status in active_statuses and prev_status not in active_statuses:
+            for link in delivery.order_links:
+                if not link.quantity_deducted:
+                    order = Order.query.get(link.order_id)
+                    if order and link.quantity <= order.quantity:
+                        order.quantity -= link.quantity
+                        link.quantity_deducted = True
+                        if order.status and order.status.lower() == 'en attente':
+                            order.status = 'planifié'
+                        db.session.add(order)
+        elif new_status in CANCELLED_STATUSES and prev_status in active_statuses:
+            for link in delivery.order_links:
+                if link.quantity_deducted:
+                    order = Order.query.get(link.order_id)
+                    if order:
+                        order.quantity += link.quantity
+                        link.quantity_deducted = False
+                        db.session.add(order)
     
     # Handle other simple scalar fields
     if 'destination' in data:
@@ -357,7 +399,6 @@ def update_delivery(delivery_id):
 
     # 6) Orders many-to-many: rebuild only if user sent order_ids
     if 'order_ids' in data:
-        # parse UUIDs
         conv_ids = []
         for oid in data['order_ids'] or []:
             try:
@@ -365,13 +406,46 @@ def update_delivery(delivery_id):
             except (ValueError, TypeError):
                 return jsonify({"error": f"Invalid order ID format: {oid}"}), 400
 
-        # clear old links
+        order_quantities = data.get('order_quantities', {})
+        active_statuses = ['programmé', 'en cours']
+
+        # rollback quantities for existing links if deducted
+        existing_links = DeliveryOrder.query.filter_by(delivery_id=delivery.id).all()
+        for link in existing_links:
+            if link.quantity_deducted:
+                order = Order.query.get(link.order_id)
+                if order:
+                    order.quantity += link.quantity
+                    db.session.add(order)
+
         DeliveryOrder.query.filter_by(delivery_id=delivery.id).delete()
 
-        # re-add
         for oid in conv_ids:
-            # optional: check Order.exists here
-            db.session.add(DeliveryOrder(delivery_id=delivery.id, order_id=oid))
+            order = Order.query.get(oid)
+            if not order:
+                continue
+
+            qty = order_quantities.get(str(oid))
+            if qty is None:
+                qty = order.quantity
+
+            try:
+                qty = float(qty)
+            except (ValueError, TypeError):
+                return jsonify({"error": f"Invalid quantity for order {oid}"}), 400
+
+            if qty > order.quantity:
+                return jsonify({"error": f"Quantity {qty} exceeds remaining for order {oid}"}), 400
+
+            link = DeliveryOrder(delivery_id=delivery.id, order_id=oid, quantity=qty)
+            if (new_status or prev_status) in active_statuses:
+                order.quantity -= qty
+                link.quantity_deducted = True
+                if order.status and order.status.lower() == 'en attente':
+                    order.status = 'planifié'
+                db.session.add(order)
+
+            db.session.add(link)
 
     # 7) Check for rescheduling (date, time, or truck changes)
     if any(field in data for field in ['scheduled_date', 'scheduled_time', 'truck_id']):
@@ -484,7 +558,8 @@ def update_delivery(delivery_id):
                 'destination': delivery.destination,
                 'notes': delivery.notes,
                 'delayed': delivery.delayed,
-                'last_updated': delivery.last_updated.isoformat() if delivery.last_updated else None
+                'last_updated': delivery.last_updated.isoformat() if delivery.last_updated else None,
+                'order_quantities': {str(l.order_id): l.quantity for l in delivery.order_links}
             }
         }
         
@@ -523,7 +598,15 @@ def delete_delivery(delivery_id):
         # Get all order IDs associated with this delivery
         order_links = DeliveryOrder.query.filter_by(delivery_id=delivery.id).all()
         order_ids = [link.order_id for link in order_links]
-        
+
+        # Roll back quantities if needed
+        for link in order_links:
+            if link.quantity_deducted:
+                order = Order.query.get(link.order_id)
+                if order:
+                    order.quantity += link.quantity
+                    db.session.add(order)
+
         # Delete the delivery-order associations
         DeliveryOrder.query.filter_by(delivery_id=delivery.id).delete()
         
