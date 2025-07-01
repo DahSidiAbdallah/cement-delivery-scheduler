@@ -5,7 +5,7 @@ from app.models import db, Delivery, DeliveryHistory, DeliveryOrder, Order, Truc
 from app.extensions import db
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime, timedelta
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 
 bp = Blueprint('deliveries', __name__, url_prefix='/deliveries')
@@ -141,7 +141,11 @@ def create_delivery():
             db.session.add(DeliveryOrder(delivery_id=new_delivery.id, order_id=oid))
 
             order = Order.query.get(oid)
-            if order and order.status == 'en attente' and status in ['programmé', 'en cours']:
+
+            if order and order.status and order.status.lower() == 'en attente' and status in ['programmé', 'en cours']:
+
+        
+
                 order.status = 'planifié'
                 db.session.add(order)
         
@@ -405,7 +409,7 @@ def update_delivery(delivery_id):
                     ).filter(
                         DeliveryOrder.order_id == order_id,
                         Delivery.id != delivery.id,
-                        ~Delivery.status.in_(['annulée', 'livrée'])
+                        ~func.lower(Delivery.status).in_(['annulée', 'livrée'])
                     ).count()
                     
                     # If no other active deliveries, revert to 'en attente'
@@ -417,7 +421,11 @@ def update_delivery(delivery_id):
             # When delivery is in progress, mark orders as 'en cours'
             for order_id in order_ids:
                 order = Order.query.get(order_id)
-                if order and order.status in ['planifié', 'en attente']:
+
+                if order and order.status and order.status.lower() in ['planifié', 'en attente']:
+
+               
+
                     order.status = 'en cours'
                     db.session.add(order)
 
@@ -425,7 +433,7 @@ def update_delivery(delivery_id):
             # When reactivating a cancelled delivery, update orders to 'planifié'
             for order_id in order_ids:
                 order = Order.query.get(order_id)
-                if order and order.status == 'en attente':
+                if order and order.status and order.status.lower() == 'en attente':
                     order.status = 'planifié'
                     db.session.add(order)
         
@@ -509,18 +517,18 @@ def delete_delivery(delivery_id):
                 ).filter(
                     DeliveryOrder.order_id == order_id,
                     Delivery.id != delivery.id,
-                    ~Delivery.status.in_(['annulée', 'livrée'])
+                    ~func.lower(Delivery.status).in_(['annulée', 'livrée'])
                 ).count()
                 
                 # If no other active deliveries, revert to 'en attente'
-                if other_deliveries == 0 and order.status != 'livrée':
+                if other_deliveries == 0 and (order.status or '').lower() != 'livrée':
                     order.status = 'en attente'
                     db.session.add(order)
         
         # Handle the legacy single order_id if it exists
         if delivery.order_id and delivery.order_id not in order_ids:
             legacy_order = Order.query.get(delivery.order_id)
-            if legacy_order and legacy_order.status != 'livrée':
+            if legacy_order and (legacy_order.status or '').lower() != 'livrée':
                 legacy_order.status = 'en attente'
                 db.session.add(legacy_order)
         
