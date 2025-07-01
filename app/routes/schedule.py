@@ -30,7 +30,12 @@ def get_schedule():
     # Map truck_id -> schedule item
     # Each order entry will include the quantity scheduled for that delivery
     schedule_map = {
-        t.id: {"truck": t.plate_number, "orders": [], "load": 0} for t in trucks
+        t.id: {
+            "truck": t.plate_number, 
+            "orders": [], 
+            "load": 0,
+            "is_external": False  # Company trucks
+        } for t in trucks
     }
 
     scheduled_order_ids = set()
@@ -47,6 +52,7 @@ def get_schedule():
                         "truck": d.external_truck_label or "Externe",
                         "orders": [],
                         "load": 0,
+                        "is_external": True,  # External trucks
                     },
                 )
             else:
@@ -90,7 +96,7 @@ def get_schedule():
         "daily_limit": daily_limit,
         "scheduled_orders": len(scheduled_order_ids),
         "scheduled_quantity": scheduled_quantity,
-        "trucks_utilized": len([s for s in schedule if s["orders"]]),
+        "trucks_utilized": len([s for s in schedule if s["orders"] and not s.get("is_external", False)]),  # Only count company trucks with orders
     }
 
     return jsonify({"schedule": schedule, "stats": stats}), 200
