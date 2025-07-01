@@ -7,6 +7,9 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime, timedelta
 from sqlalchemy import desc, func
 
+# Status strings used for cancelled deliveries (masculine/feminine forms)
+CANCELLED_STATUSES = ['annulée', 'annulé']
+
 
 bp = Blueprint('deliveries', __name__, url_prefix='/deliveries')
 bp.strict_slashes = False
@@ -282,7 +285,7 @@ def update_delivery(delivery_id):
         status_changed = True
 
         # Check if we need to set the delayed flag
-        if delivery.status == 'annulée' and old_status in ['programmé', 'en cours']:
+        if delivery.status in CANCELLED_STATUSES and old_status in ['programmé', 'en cours']:
             delivery.delayed = True
     
     # Handle other simple scalar fields
@@ -351,7 +354,7 @@ def update_delivery(delivery_id):
         if combined <= now:
             # If this is a status update and the delivery is being marked as delayed,
             # allow it even if the date is in the past
-            if not (status_changed and delivery.status == 'annulée' and delivery.delayed):
+            if not (status_changed and delivery.status in CANCELLED_STATUSES and delivery.delayed):
                 return jsonify({"error": "Delivery must be scheduled in the future"}), 400
             
             # If we're updating to a past date, set the delayed flag if not already set
@@ -398,42 +401,26 @@ def update_delivery(delivery_id):
                     order.status = 'livrée'
                     db.session.add(order)
         
-        elif new_status == 'annulée':
+        elif new_status in CANCELLED_STATUSES:
             # When delivery is cancelled, check each order to see if it should be reverted to 'en attente'
             for order_id in order_ids:
                 order = Order.query.get(order_id)
-                if not order:
-                    logging.warning(f"Order {order_id} not found")
-                    continue
-                
-                # Store the old status for logging
-                old_status = order.status
-                current_status = order.status.lower() if order.status else ''
-                logging.info(f"Processing order {order_id} with status: {old_status}")
-                
-                # Get all non-cancelled, non-delivered deliveries for this order
-                active_deliveries = db.session.query(Delivery)\
-                    .join(DeliveryOrder, Delivery.id == DeliveryOrder.delivery_id)\
-                    .filter(
+                if order:
+                    # Check if this order has other active deliveries
+                    other_deliveries = db.session.query(Delivery).join(
+                        DeliveryOrder, Delivery.id == DeliveryOrder.delivery_id
+                    ).filter(
                         DeliveryOrder.order_id == order_id,
-                        Delivery.id != delivery.id,  # Exclude the current delivery being updated
-                        ~func.lower(Delivery.status).in_(['annulée', 'livrée'])
-                    )\
-                    .all()
-                
-                logging.info(f"Order {order_id} has {len(active_deliveries)} other active deliveries")
-                
-                # If no other active deliveries and current status is 'planifié' or 'en cours', update to 'en attente'
-                if not active_deliveries and current_status in ['planifié', 'en cours']:
-                    order.status = 'en attente'
-                    db.session.add(order)
-                    logging.info(f"Order {order_id} status changed from '{old_status}' to 'en attente' as its delivery was cancelled")
-                elif active_deliveries:
-                    logging.info(f"Order {order_id} has other active deliveries, status remains unchanged")
-                else:
-                    logging.info(f"Order {order_id} status is '{current_status}', no status change needed")
+                        Delivery.id != delivery.id,
+                        ~func.lower(Delivery.status).in_(CANCELLED_STATUSES + ['livrée'])
+                    ).count()
+                    
+                    # If no other active deliveries, revert to 'en attente'
+                    if other_deliveries == 0:
+                        order.status = 'en attente'
+                        db.session.add(order)
 
-        elif new_status == 'en cours' and old_status != 'annulée':
+        elif new_status == 'en cours' and old_status not in CANCELLED_STATUSES:
             # When delivery is in progress, mark orders as 'en cours'
             for order_id in order_ids:
                 order = Order.query.get(order_id)
@@ -445,7 +432,7 @@ def update_delivery(delivery_id):
                     order.status = 'en cours'
                     db.session.add(order)
 
-        elif new_status in ['programmé', 'en cours'] and old_status == 'annulée':
+        elif new_status in ['programmé', 'en cours'] and old_status in CANCELLED_STATUSES:
             # When reactivating a cancelled delivery, update orders to 'planifié'
             for order_id in order_ids:
                 order = Order.query.get(order_id)
@@ -462,7 +449,7 @@ def update_delivery(delivery_id):
                 if legacy_order:
                     legacy_order.status = 'livrée'
                     db.session.add(legacy_order)
-            elif new_status == 'annulée':
+            elif new_status in CANCELLED_STATUSES:
                 # For legacy orders, just revert to 'en attente' when delivery is cancelled
                 legacy_order = Order.query.get(delivery.order_id)
                 if legacy_order:
@@ -526,30 +513,20 @@ def delete_delivery(delivery_id):
         # For each order, check if it should be reverted to 'en attente'
         for order_id in order_ids:
             order = Order.query.get(order_id)
-            if not order:
-                logging.warning(f"Order {order_id} not found")
-                continue
+            if order:
+                # Check if this order has other active deliveries
+                other_deliveries = db.session.query(Delivery).join(
+                    DeliveryOrder, Delivery.id == DeliveryOrder.delivery_id
+                ).filter(
+                    DeliveryOrder.order_id == order_id,
+                    Delivery.id != delivery.id,
+                    ~func.lower(Delivery.status).in_(CANCELLED_STATUSES + ['livrée'])
+                ).count()
                 
-            logging.info(f"Processing order {order_id} with status: {order.status}")
-            
-            # Check if this order has other active deliveries
-            other_deliveries = db.session.query(Delivery).join(
-                DeliveryOrder, Delivery.id == DeliveryOrder.delivery_id
-            ).filter(
-                DeliveryOrder.order_id == order_id,
-                Delivery.id != delivery.id,
-                ~func.lower(Delivery.status).in_(['annulée', 'livrée'])
-            ).all()
-            
-            logging.info(f"Order {order_id} has {len(other_deliveries)} other active deliveries")
-            
-            # If no other active deliveries, revert to 'en attente' if the order was 'planifié' or 'en cours'
-            current_status = order.status.lower() if order.status else ''
-            if not other_deliveries and current_status in ['planifié', 'en cours']:
-                old_status = order.status
-                order.status = 'en attente'
-                db.session.add(order)
-                logging.info(f"Order {order_id} status changed from '{old_status}' to 'en attente' as its only delivery was deleted")
+                # If no other active deliveries, revert to 'en attente'
+                if other_deliveries == 0 and (order.status or '').lower() != 'livrée':
+                    order.status = 'en attente'
+                    db.session.add(order)
         
         # Handle the legacy single order_id if it exists
         if delivery.order_id and delivery.order_id not in order_ids:
