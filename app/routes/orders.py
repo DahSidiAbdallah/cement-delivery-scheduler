@@ -171,3 +171,41 @@ def delete_order(order_id):
     except Exception as e:
         logging.exception("Exception occurred while deleting order")
         return jsonify({"error": "Server error", "details": str(e)}), 500
+
+
+@bp.route('/<order_id>/deliveries', methods=['GET', 'OPTIONS'])
+@jwt_required()
+def get_order_deliveries(order_id):
+    """Return deliveries linked to a given order."""
+    if request.method == 'OPTIONS':
+        return '', 200
+    try:
+        try:
+            order_uuid = uuid.UUID(order_id)
+        except Exception:
+            return jsonify({"message": "Invalid order ID format"}), 400
+
+        # Deliveries linked via the many-to-many table
+        deliveries = db.session.query(Delivery).join(
+            DeliveryOrder, Delivery.id == DeliveryOrder.delivery_id
+        ).filter(DeliveryOrder.order_id == order_uuid).all()
+
+        # Also check legacy single order_id field
+        legacy = Delivery.query.filter_by(order_id=order_uuid).all()
+
+        all_deliveries = {d.id: d for d in deliveries + legacy}.values()
+
+        result = [
+            {
+                "id": str(d.id),
+                "status": d.status,
+                "scheduled_date": d.scheduled_date.isoformat() if d.scheduled_date else None,
+                "scheduled_time": str(d.scheduled_time) if d.scheduled_time else None,
+            }
+            for d in all_deliveries
+        ]
+
+        return jsonify(result), 200
+    except Exception as e:
+        logging.exception("Exception occurred while getting order deliveries")
+        return jsonify({"error": "Server error", "details": str(e)}), 500

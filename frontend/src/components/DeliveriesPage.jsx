@@ -22,6 +22,7 @@ import api from '../services/api';
 import Loading from './Loading';
 
 const statusColors = {
+  'programmé': 'warning',
   'en attente': 'warning',
   'en cours': 'info',
   'livrée': 'success',
@@ -97,6 +98,40 @@ const formatDateForDisplay = (dateString) => {
   }
 };
 
+const parseApiError = (error, defaultMessage = 'Une erreur est survenue') => {
+  if (error.response) {
+    const data = error.response.data || {};
+    let message = data.message || data.error || data.details || defaultMessage;
+
+    switch (error.response.status) {
+      case 400:
+        message = message || "Données invalides. Veuillez vérifier les informations saisies.";
+        break;
+      case 401:
+        message = 'Session expirée. Veuillez vous reconnecter.';
+        break;
+      case 404:
+        message = 'Ressource non trouvée. Veuillez rafraîchir la page.';
+        break;
+      case 409:
+        message = `Conflit de données : ${message}`;
+        break;
+      default:
+        if (error.response.status >= 500) {
+          message = 'Erreur serveur. Veuillez réessayer plus tard.';
+        }
+    }
+
+    return message;
+  }
+
+  if (error.request) {
+    return 'Pas de réponse du serveur. Vérifiez votre connexion internet.';
+  }
+
+  return error.message || defaultMessage;
+};
+
 export default function DeliveriesPage() {
   const [deliveries, setDeliveries] = useState([]);
   const [dependencies, setDependencies] = useState({ 
@@ -117,7 +152,7 @@ export default function DeliveriesPage() {
     truck_id: '',
     scheduled_date: new Date(),
     scheduled_time: '',
-    status: 'en attente',
+    status: 'programmé',
     destination: '',
     notes: ''
   });
@@ -276,7 +311,7 @@ export default function DeliveriesPage() {
           truck_id: truckId,
           scheduled_date: scheduledDate,
           scheduled_time: delivery.scheduled_time || '',
-          status: delivery.status || 'en attente',
+          status: delivery.status || 'programmé',
           destination: delivery.destination || '',
           notes: delivery.notes || ''
         });
@@ -292,7 +327,7 @@ export default function DeliveriesPage() {
           truck_id: '',
           scheduled_date: new Date(),
           scheduled_time: '',
-          status: 'en attente',
+          status: 'programmé',
           destination: '',
           notes: ''
         });
@@ -306,7 +341,7 @@ export default function DeliveriesPage() {
         truck_id: '',
         scheduled_date: new Date(),
         scheduled_time: '',
-        status: 'en attente'
+        status: 'programmé'
       });
       setTruckCapacity({ used: 0, total: 0, exceeded: false });
       setSnackbar({ 
@@ -609,7 +644,7 @@ export default function DeliveriesPage() {
         }),
         scheduled_date: formatDateForAPI(form.scheduled_date || new Date()),
         scheduled_time: form.scheduled_time ? formatTimeForAPI(form.scheduled_time) : null,
-        status: form.status || 'en attente',
+        status: form.status || 'programmé',
         destination: form.destination || '',
         notes: form.notes || ''
       };
@@ -654,44 +689,16 @@ export default function DeliveriesPage() {
         truck_id: '',
         scheduled_date: new Date(),
         scheduled_time: '',
-        status: 'en attente',
+        status: 'programmé',
         destination: '',
         notes: ''
       });
       
     } catch (error) {
       console.error('Error saving delivery:', error);
-      let errorMessage = 'Erreur lors de la sauvegarde';
-      
-      if (error.response) {
-        // Handle specific error cases
-        if (error.response.data) {
-          if (error.response.data.error) {
-            errorMessage = error.response.data.error;
-          } else if (error.response.data.details) {
-            errorMessage = error.response.data.details;
-          }
-        }
-        
-        if (error.response.status === 400) {
-          errorMessage = errorMessage || 'Données invalides. Veuillez vérifier les informations saisies.';
-        } else if (error.response.status === 401) {
-          errorMessage = 'Session expirée. Veuillez vous reconnecter.';
-        } else if (error.response.status === 404) {
-          errorMessage = 'Ressource non trouvée. Veuillez rafraîchir la page.';
-        } else if (error.response.status === 409) {
-          errorMessage = 'Conflit de données : ' + (errorMessage || 'Certaines commandes sont déjà planifiées');
-        } else if (error.response.status >= 500) {
-          errorMessage = 'Erreur serveur. Veuillez réessayer plus tard.';
-        }
-      } else if (error.request) {
-        // Request was made but no response received
-        errorMessage = 'Pas de réponse du serveur. Vérifiez votre connexion internet.';
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-      
-      setSnackbar({ 
+      const errorMessage = parseApiError(error, 'Erreur lors de la sauvegarde de la livraison');
+
+      setSnackbar({
         message: errorMessage,
         severity: 'error',
         autoHideDuration: 10000 // Show error messages longer
@@ -1150,7 +1157,7 @@ export default function DeliveriesPage() {
               <Select
                 labelId="status-select-label"
                 id="status-select"
-                value={form.status || 'en attente'}
+                value={form.status || 'programmé'}
                 onChange={(e) => handleEditChange('status', e.target.value)}
                 label="Statut"
                 disabled={isViewer}
