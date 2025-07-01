@@ -224,16 +224,18 @@ export default function SchedulePage({ autoRefresh = false }) {
   };
 
   // Helper: Compose delivery rows (with extra info)
-  const renderDeliveries = (orderIds) => {
-    // Build array of enriched deliveries for this truck
-    const deliveries = orderIds.map((orderId, idx) => {
+  const renderDeliveries = (orderEntries) => {
+    // orderEntries may contain just IDs or objects with id/quantity
+    const deliveries = orderEntries.map((entry, idx) => {
+      const orderId = typeof entry === 'string' ? entry : entry.id;
+      const qty = typeof entry === 'object' && entry !== null ? entry.quantity : null;
       const order = orders.find(o => o.id === orderId);
       const client = clients.find(c => c.id === order?.client_id);
       const product = products.find(p => p.id === order?.product_id);
       return {
         idx,
         clientName: client ? client.name : orderId,
-        quantity: order?.quantity,
+        quantity: qty != null ? qty : order?.quantity,
         requestedDate: order?.requested_date,
         requestedTime: order?.requested_time?.slice(0,5) || '-', // "HH:MM"
         product: product ? `${product.name}${product.type ? ` (${product.type})` : ''}` : '',

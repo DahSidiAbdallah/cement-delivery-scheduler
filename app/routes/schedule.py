@@ -27,6 +27,7 @@ def get_schedule():
     deliveries = Delivery.query.filter(Delivery.status.in_(active_statuses)).all()
 
     # Map truck_id -> schedule item
+    # Each order entry will include the quantity scheduled for that delivery
     schedule_map = {
         t.id: {'truck': str(t.id), 'orders': [], 'load': 0}
         for t in trucks
@@ -41,17 +42,26 @@ def get_schedule():
             # Skip deliveries without a valid truck
             continue
 
-        # Collect orders associated with this delivery
-        linked_orders = list(d.orders)
-        if d.order_id:
-            legacy = Order.query.get(d.order_id)
-            if legacy:
-                linked_orders.append(legacy)
+        # Collect orders associated with this delivery with quantities
+        links = d.order_links
+        legacy_handled = False
+        for link in links:
+            entry['orders'].append({
+                'id': str(link.order_id),
+                'quantity': link.quantity
+            })
+            scheduled_order_ids.add(link.order_id)
+            scheduled_quantity += link.quantity
+            if d.order_id and link.order_id == d.order_id:
+                legacy_handled = True
 
-        for order in linked_orders:
-            entry['orders'].append(str(order.id))
-            scheduled_order_ids.add(order.id)
-            scheduled_quantity += order.quantity
+        # Handle legacy single order_id if not already represented in order_links
+        if d.order_id and not legacy_handled:
+            order = Order.query.get(d.order_id)
+            qty = order.quantity if order else 0
+            entry['orders'].append({'id': str(d.order_id), 'quantity': qty})
+            scheduled_order_ids.add(d.order_id)
+            scheduled_quantity += qty
 
     # Convert schedule map to list (keep truck order from DB)
     schedule = list(schedule_map.values())
