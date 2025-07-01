@@ -141,7 +141,11 @@ def create_delivery():
             db.session.add(DeliveryOrder(delivery_id=new_delivery.id, order_id=oid))
 
             order = Order.query.get(oid)
+
             if order and order.status and order.status.lower() == 'en attente' and status in ['programmé', 'en cours']:
+
+        
+
                 order.status = 'planifié'
                 db.session.add(order)
         
@@ -417,7 +421,11 @@ def update_delivery(delivery_id):
             # When delivery is in progress, mark orders as 'en cours'
             for order_id in order_ids:
                 order = Order.query.get(order_id)
+
                 if order and order.status and order.status.lower() in ['planifié', 'en attente']:
+
+               
+
                     order.status = 'en cours'
                     db.session.add(order)
 
