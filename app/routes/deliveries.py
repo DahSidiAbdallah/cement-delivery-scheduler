@@ -228,9 +228,11 @@ def get_deliveries():
         logging.exception("Exception occurred while getting deliveries")
         return jsonify({"error": "Server error", "details": str(e)}), 500
 
-@bp.route('/<delivery_id>', methods=['PUT'])
+@bp.route('/<delivery_id>', methods=['PUT', 'OPTIONS'])
 @jwt_required()
 def update_delivery(delivery_id):
+    if request.method == 'OPTIONS':
+        return '', 200
     # 1) Parse and validate the URL param
     try:
         delivery_uuid = uuid.UUID(delivery_id)
@@ -247,6 +249,12 @@ def update_delivery(delivery_id):
 
     # 3) Handle status changes and log history
     current_user_id = get_jwt_identity()
+    try:
+        if isinstance(current_user_id, str):
+            current_user_id = uuid.UUID(current_user_id)
+    except (ValueError, AttributeError):
+        return jsonify({"error": "Invalid user ID format"}), 400
+
     status_changed = False
     
     if 'status' in data and data['status'] != delivery.status:
