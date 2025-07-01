@@ -1805,6 +1805,22 @@ export default function DeliveriesPage() {
           )}
         </DialogActions>
       </Dialog>
+      {/* Snackbar for notifications */}
+      <Snackbar
+        open={!!snackbar}
+        autoHideDuration={snackbar?.autoHideDuration || 3000}
+        onClose={() => setSnackbar(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setSnackbar(null)} 
+          severity={snackbar?.severity || 'info'}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snackbar?.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

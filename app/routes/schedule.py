@@ -123,8 +123,6 @@ def export_schedule():
             product = products.get(str(order.product_id))
             
             rows.append({
-                'Numéro': idx,
-                'Camion': truck_plate,
                 'Client': client.name if client else str(order.client_id),
                 'Quantité (t)': order.quantity,
                 'Produit': (
@@ -132,6 +130,9 @@ def export_schedule():
                     if product and product.type else
                     (product.name if product else "")
                 ),
+                'Date': order.requested_date.strftime('%Y-%m-%d') if order.requested_date else '',
+                'Heure': order.requested_time.strftime('%H:%M') if order.requested_time else '',
+                'Camion': truck_plate
             })
 
     # Make DataFrame & export to Excel

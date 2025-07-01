@@ -79,10 +79,14 @@ class Delivery(db.Model):
     last_updated = db.Column(db.DateTime, onupdate=db.func.now())
     
     # Relationships
-    orders = db.relationship('Order', secondary='delivery_orders', backref='deliveries')
-    order_links = db.relationship('DeliveryOrder', backref='delivery', cascade='all, delete-orphan')
-    history = db.relationship('DeliveryHistory', backref='delivery', cascade='all, delete-orphan', 
-                             order_by='desc(DeliveryHistory.changed_at)')
+    orders = db.relationship('Order', secondary='delivery_orders', backref=db.backref('deliveries', lazy='dynamic'))
+    order_links = db.relationship('DeliveryOrder', backref='delivery', 
+                                 cascade='all, delete-orphan', 
+                                 passive_deletes=True)
+    history = db.relationship('DeliveryHistory', backref='delivery', 
+                            cascade='all, delete-orphan',
+                            passive_deletes=True,
+                            order_by='desc(DeliveryHistory.changed_at)')
     truck = db.relationship('Truck')
     
     def log_status_change(self, user_id, new_status, notes=None, previous_data=None):
@@ -164,8 +168,12 @@ class Delivery(db.Model):
 
 class DeliveryOrder(db.Model):
     __tablename__ = 'delivery_orders'
-    delivery_id = db.Column(UUID(as_uuid=True), db.ForeignKey('deliveries.id'), primary_key=True)
-    order_id = db.Column(UUID(as_uuid=True), db.ForeignKey('orders.id'), primary_key=True)
+    delivery_id = db.Column(UUID(as_uuid=True), 
+                          db.ForeignKey('deliveries.id', ondelete='CASCADE'), 
+                          primary_key=True)
+    order_id = db.Column(UUID(as_uuid=True), 
+                        db.ForeignKey('orders.id', ondelete='CASCADE'), 
+                        primary_key=True)
     quantity = db.Column(db.Float, nullable=False, default=0)
     quantity_deducted = db.Column(db.Boolean, default=False, nullable=False)
 

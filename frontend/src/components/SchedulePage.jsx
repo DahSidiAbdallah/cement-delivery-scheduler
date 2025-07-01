@@ -485,13 +485,12 @@ export default function SchedulePage({ autoRefresh = false }) {
             <Table>
               <TableHead style={tableStyles.head}>
                 <TableRow>
-                  <TableCell style={tableStyles.cellBold}>Camion</TableCell>
-                  <TableCell style={tableStyles.cellBold}>#</TableCell>
                   <TableCell style={tableStyles.cellBold}>Client</TableCell>
                   <TableCell style={tableStyles.cellBold}>Quantité (t)</TableCell>
+                  <TableCell style={tableStyles.cellBold}>Produit</TableCell>
                   <TableCell style={tableStyles.cellBold}>Date</TableCell>
                   <TableCell style={tableStyles.cellBold}>Heure</TableCell>
-                  <TableCell style={tableStyles.cellBold}>Produit</TableCell>
+                  <TableCell style={tableStyles.cellBold}>Camion</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -500,22 +499,16 @@ export default function SchedulePage({ autoRefresh = false }) {
                   // Separate row for each delivery, but only show truck for the first row
                   return deliveries.length === 0 ? (
                     <TableRow key={idx}>
-                      <TableCell>{getTruckPlate(item.truck)}</TableCell>
                       <TableCell colSpan={6} align="center">Aucune livraison</TableCell>
                     </TableRow>
                   ) : deliveries.map((d, i) => (
                     <TableRow key={i} style={tableStyles.row}>
-                      {i === 0 ? (
-                        <TableCell rowSpan={deliveries.length} style={{ verticalAlign: 'top', fontWeight: 600 }}>
-                          {getTruckPlate(item.truck)}
-                        </TableCell>
-                      ) : null}
-                      <TableCell>{i + 1}</TableCell>
                       <TableCell>{d.clientName}</TableCell>
                       <TableCell>{d.quantity}</TableCell>
+                      <TableCell>{d.product}</TableCell>
                       <TableCell>{d.requestedDate}</TableCell>
                       <TableCell>{d.requestedTime}</TableCell>
-                      <TableCell>{d.product}</TableCell>
+                      <TableCell>{getTruckPlate(item.truck)}</TableCell>
                     </TableRow>
                   ));
                 })}
