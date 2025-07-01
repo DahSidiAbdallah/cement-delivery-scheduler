@@ -1,11 +1,12 @@
 import logging
 import uuid
 from flask import Blueprint, request, jsonify
-from app.models import Delivery, DeliveryHistory, DeliveryOrder, Order, Truck, User
+from app.models import db, Delivery, DeliveryHistory, DeliveryOrder, Order, Truck, User
 from app.extensions import db
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime, timedelta
 from sqlalchemy import desc
+
 
 bp = Blueprint('deliveries', __name__, url_prefix='/deliveries')
 bp.strict_slashes = False
@@ -102,6 +103,12 @@ def create_delivery():
 
         # Get the current user ID for history tracking
         current_user_id = get_jwt_identity()
+        try:
+            # Ensure current_user_id is a UUID object
+            if isinstance(current_user_id, str):
+                current_user_id = uuid.UUID(current_user_id)
+        except (ValueError, AttributeError):
+            return jsonify({"error": "Invalid user ID format"}), 400
         
         # Set default status if not provided
         status = data.get('status', 'Programmé')
@@ -122,7 +129,7 @@ def create_delivery():
         history = DeliveryHistory(
             delivery_id=new_delivery.id,
             status=status,
-            changed_by=current_user_id,
+            changed_by=current_user_id,  # This is now a UUID object
             notes="Initial status"
         )
         db.session.add(history)

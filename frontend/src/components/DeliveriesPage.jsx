@@ -1,11 +1,42 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
-import { AuthContext } from '../contexts/AuthContext';
-import {
-  Box, Button, Typography, Paper, Table, TableBody, TableCell, TableContainer, 
-  TableHead, TableRow, IconButton, Snackbar, Dialog, DialogTitle, DialogContent, 
-  DialogActions, CircularProgress, Alert, MenuItem, Select, InputLabel, FormControl, 
-  Chip, TextField, TablePagination, TableSortLabel, Tooltip, DialogContentText, Divider,
-  FormHelperText, Avatar, Stack, List, ListItem, ListItemText, ListItemAvatar, Badge
+import { 
+  Box, 
+  Button, 
+  Typography, 
+  Paper, 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableContainer, 
+  TableHead, 
+  TableRow, 
+  IconButton, 
+  Snackbar, 
+  Dialog, 
+  DialogTitle, 
+  DialogContent, 
+  DialogActions, 
+  CircularProgress, 
+  Alert, 
+  MenuItem, 
+  Select, 
+  InputLabel, 
+  FormControl, 
+  Chip, 
+  TextField, 
+  TablePagination, 
+  TableSortLabel, 
+  Tooltip, 
+  DialogContentText, 
+  Divider,
+  FormHelperText, 
+  Avatar, 
+  Stack, 
+  List, 
+  ListItem, 
+  ListItemText, 
+  ListItemAvatar, 
+  Badge
 } from '@mui/material';
 import NotesIcon from '@mui/icons-material/Notes';
 import EditIcon from '@mui/icons-material/Edit';
@@ -14,16 +45,26 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import AddIcon from '@mui/icons-material/Add';
 import HistoryIcon from '@mui/icons-material/History';
 import WarningIcon from '@mui/icons-material/Warning';
+import CloseIcon from '@mui/icons-material/Close';
+import LocalShippingIcon from '@mui/icons-material/LocalShipping';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CancelIcon from '@mui/icons-material/Cancel';
+import ScheduleIcon from '@mui/icons-material/Schedule';
+import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import { DatePicker, LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { format, parseISO, isValid } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import api from '../services/api';
+import { AuthContext } from '../contexts/AuthContext';
 import Loading from './Loading';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
+
+
 
 const statusColors = {
   'programmé': 'warning',
-  'en attente': 'warning',
   'en cours': 'info',
   'livrée': 'success',
   'annulée': 'error'
@@ -156,6 +197,13 @@ export default function DeliveriesPage() {
     destination: '',
     notes: ''
   });
+  const [formErrors, setFormErrors] = useState({
+    order_ids: '',
+    truck_id: '',
+    scheduled_date: '',
+    scheduled_time: '',
+    destination: ''
+  });
   const [truckCapacity, setTruckCapacity] = useState({ used: 0, total: 0, exceeded: false });
   const [deleteConfirmation, setDeleteConfirmation] = useState({ open: false, id: null });
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
@@ -181,21 +229,37 @@ export default function DeliveriesPage() {
       // Show loading state
       setLoadingError(null);
       
-      // Fetch both 'en attente' and 'validée' orders
-      const [pendingResponse, validatedResponse] = await Promise.all([
+      // Fetch both 'en attente' and 'validée' orders with client and product data
+      const [pendingResponse, validatedResponse, clientsResponse, productsResponse] = await Promise.all([
         api.get('/orders?status=en attente').catch(() => ({ data: [] })),
-        api.get('/orders?status=validée').catch(() => ({ data: [] }))
+        api.get('/orders?status=validée').catch(() => ({ data: [] })),
+        api.get('/clients').catch(() => ({ data: [] })),
+        api.get('/products').catch(() => ({ data: [] }))
       ]);
       
       // Combine both sets of orders
       const allOrders = [...(pendingResponse?.data || []), ...(validatedResponse?.data || [])];
+      const clients = clientsResponse?.data || [];
+      const products = productsResponse?.data || [];
       
       if (allOrders.length === 0) {
         setLoadingError('Aucune commande disponible pour le moment');
       }
       
+      // Enrich orders with client and product data
+      const enrichedOrders = allOrders.map(order => {
+        const client = clients.find(c => String(c.id) === String(order.client_id));
+        const product = products.find(p => String(p.id) === String(order.product_id));
+        
+        return {
+          ...order,
+          client: client || { id: order.client_id, name: 'Client inconnu' },
+          product: product || { id: order.product_id, name: 'Produit inconnu' }
+        };
+      });
+      
       // Remove duplicates by order ID in case any order appears in both responses
-      const uniqueOrders = Array.from(new Map(allOrders.map(order => [order.id, order])).values());
+      const uniqueOrders = Array.from(new Map(enrichedOrders.map(order => [order.id, order])).values());
       
       setDependencies(prev => ({ ...prev, orders: uniqueOrders }));
     } catch (error) {
@@ -262,6 +326,14 @@ export default function DeliveriesPage() {
   const handleOpenDialog = (delivery = null) => {
     console.log('Opening dialog with delivery:', delivery);
     setEditDelivery(delivery);
+    // Reset form errors when opening dialog
+    setFormErrors({
+      order_ids: '',
+      truck_id: '',
+      scheduled_date: '',
+      scheduled_time: '',
+      destination: ''
+    });
     
     try {
       setEditDelivery(delivery);
@@ -430,6 +502,16 @@ export default function DeliveriesPage() {
       };
       
       setTruckCapacity(newCapacity);
+      
+      // Show warning if capacity is exceeded
+      if (exceeded) {
+        setSnackbar({
+          message: `Attention : La capacité du camion est dépassée (${totalQuantity.toFixed(1)}T > ${truckCapacityValue.toFixed(1)}T)`,
+          severity: 'warning',
+          autoHideDuration: 5000
+        });
+      }
+      
       return newCapacity.exceeded;
     } catch (error) {
       console.error('Error in checkTruckCapacity:', error);
@@ -440,46 +522,69 @@ export default function DeliveriesPage() {
 
   // Validate form fields
   const validateForm = () => {
-    // Validate date is not in the past
+    const errors = {};
+    let isValid = true;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    const selectedDate = new Date(form.scheduled_date);
-    selectedDate.setHours(0, 0, 0, 0);
-    
-    if (selectedDate < today) {
-      return { valid: false, message: 'La date de livraison ne peut pas être dans le passé' };
+    // Validate orders
+    if (!form.order_ids || form.order_ids.length === 0) {
+      errors.order_ids = 'Veuillez sélectionner au moins une commande';
+      isValid = false;
     }
     
-    // If time is provided, validate it
+    // Validate truck
+    if (!form.truck_id) {
+      errors.truck_id = 'Veuillez sélectionner un camion';
+      isValid = false;
+    }
+    
+    // Validate date
+    if (!form.scheduled_date) {
+      errors.scheduled_date = 'Veuillez sélectionner une date';
+      isValid = false;
+    } else {
+      const selectedDate = new Date(form.scheduled_date);
+      selectedDate.setHours(0, 0, 0, 0);
+      
+      if (selectedDate < today) {
+        errors.scheduled_date = 'La date de livraison ne peut pas être dans le passé';
+        isValid = false;
+      }
+    }
+    
+    // Validate time format if provided
     if (form.scheduled_time) {
-      // First validate the time format (accepts both HH:MM and HH:MM:SS)
       const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/;
       if (!timeRegex.test(form.scheduled_time)) {
-        return { valid: false, message: 'Format d\'heure invalide. Utilisez le format HH:MM.' };
-      }
-      
-      // Extract hours and minutes (handle both HH:MM and HH:MM:SS formats)
-      const [hours, minutes] = form.scheduled_time.split(':');
-      
-      // Check if the time is in the past for today
-      const now = new Date();
-      if (selectedDate.getTime() === today.getTime()) {
-        const deliveryTime = new Date();
-        deliveryTime.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+        errors.scheduled_time = 'Format d\'heure invalide. Utilisez le format HH:MM.';
+        isValid = false;
+      } else {
+        // Check if time is in the past for today
+        const selectedDate = new Date(form.scheduled_date);
+        selectedDate.setHours(0, 0, 0, 0);
         
-        if (deliveryTime < now) {
-          return { valid: false, message: 'L\'heure de livraison ne peut pas être dans le passé' };
+        if (selectedDate.getTime() === today.getTime()) {
+          const [hours, minutes] = form.scheduled_time.split(':');
+          const deliveryTime = new Date();
+          deliveryTime.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+          
+          if (deliveryTime < new Date()) {
+            errors.scheduled_time = 'L\'heure de livraison ne peut pas être dans le passé';
+            isValid = false;
+          }
         }
       }
     }
     
     // Validate destination
     if (!form.destination || form.destination.trim() === '') {
-      return { valid: false, message: 'Veuillez spécifier une destination' };
+      errors.destination = 'Veuillez spécifier une destination';
+      isValid = false;
     }
     
-    return { valid: true };
+    setFormErrors(errors);
+    return { valid: isValid, errors };
   };
 
   // Check if orders are already scheduled in other deliveries
@@ -566,23 +671,18 @@ export default function DeliveriesPage() {
 
   const handleSave = async () => {
     try {
-      // Basic validation
-      if (!form.order_ids || form.order_ids.length === 0) {
-        setSnackbar({ 
-          message: 'Veuillez sélectionner au moins une commande', 
-          severity: 'warning',
-          autoHideDuration: 5000
-        });
-        return;
-      }
-      
-      // Validate time format
-      if (form.scheduled_time && !validateTimeFormat(form.scheduled_time)) {
-        setSnackbar({
-          message: 'Format d\'heure invalide. Utilisez HH:MM (ex: 14:30)',
-          severity: 'error',
-          autoHideDuration: 5000
-        });
+      // Validate form
+      const { valid, errors } = validateForm();
+      if (!valid) {
+        // Show first error message
+        const firstError = Object.values(errors).find(error => error);
+        if (firstError) {
+          setSnackbar({ 
+            message: firstError, 
+            severity: 'error',
+            autoHideDuration: 5000
+          });
+        }
         return;
       }
 
@@ -592,29 +692,24 @@ export default function DeliveriesPage() {
         if (!orderValidation.valid) {
           setSnackbar({ 
             message: orderValidation.message,
-            severity: 'warning'
+            severity: 'warning',
+            autoHideDuration: 10000
           });
           return;
         }
       }
 
-      // Validate truck capacity if we have orders and a truck
+      // Check truck capacity
       if (form.truck_id && form.order_ids?.length > 0) {
         const isExceeded = await checkTruckCapacity(form.truck_id, form.order_ids);
         if (isExceeded) {
           setSnackbar({ 
-            message: `La capacité du camion est dépassée (${truckCapacity.used.toFixed(1)}T > ${truckCapacity.total.toFixed(1)}T)`, 
-            severity: 'error' 
+            message: `La capacité du camion est dépassée (${truckCapacity.used.toFixed(1)}T > ${truckCapacity.total.toFixed(1)}T). Veuillez sélectionner un autre camion ou réduire la quantité de commandes.`, 
+            severity: 'error',
+            autoHideDuration: 10000
           });
           return;
         }
-      }
-      
-      // Validate other form fields
-      const validation = validateForm();
-      if (!validation.valid) {
-        setSnackbar({ message: validation.message, severity: 'warning' });
-        return;
       }
       
       console.log(editDelivery ? 'Updating delivery...' : 'Creating delivery...');
@@ -711,6 +806,14 @@ export default function DeliveriesPage() {
   const handleEditChange = (field, value) => {
     console.log(`Field ${field} changed to:`, value);
     
+    // Reset error for the field being changed
+    if (formErrors[field]) {
+      setFormErrors(prev => ({
+        ...prev,
+        [field]: ''
+      }));
+    }
+    
     // Special handling for time fields
     if (field === 'scheduled_time') {
       // If the value is a Date object from the time picker, format it to HH:MM
@@ -719,21 +822,28 @@ export default function DeliveriesPage() {
         const minutes = String(value.getMinutes()).padStart(2, '0');
         value = `${hours}:${minutes}`;
       } else if (typeof value === 'string') {
-        // Ensure time is in H:MM or HH:MM format
-        if (value !== '' && !/^\d{1,2}:\d{2}$/.test(value)) {
-          // If not in correct format, don't update
+        // Allow partial input (like "1" or "12:")
+        if (value !== '' && !/^\d{0,2}:?\d{0,2}$/.test(value)) {
           console.warn('Invalid time format, expected HH:MM, got:', value);
           return;
         }
       }
       
-      // Continue with the update if format is valid
-      const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
-      if (value === '' || timeRegex.test(value)) {
-        setForm(prev => ({
-          ...prev,
-          [field]: value
-        }));
+      // Update the form with the new value
+      setForm(prev => ({
+        ...prev,
+        [field]: value
+      }));
+      
+      // Validate time format when user finishes typing
+      if (value && value.length >= 4) { // At least "12:3"
+        const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+        if (!timeRegex.test(value)) {
+          setFormErrors(prev => ({
+            ...prev,
+            scheduled_time: 'Format d\'heure invalide. Utilisez HH:MM.'
+          }));
+        }
       }
       return;
     }
@@ -744,18 +854,32 @@ export default function DeliveriesPage() {
       [field]: value
     }));
     
-    // For truck or order changes, the useEffect will handle capacity check
-    if (field === 'truck_id' || field === 'order_ids') {
-      console.log(`Handling ${field} change - capacity check will be triggered by useEffect`);
+    // For truck or order changes, trigger capacity check
+    if ((field === 'truck_id' || field === 'order_ids') && value) {
+      if (field === 'truck_id' && form.order_ids?.length > 0) {
+        checkTruckCapacity(value, form.order_ids);
+      } else if (field === 'order_ids' && form.truck_id) {
+        checkTruckCapacity(form.truck_id, value);
+      }
     }
   };
 
   const handleOrderSelect = async (event) => {
     const selectedIds = event.target.value;
+    
+    // Update form and clear any previous order errors
     setForm(prev => ({
       ...prev,
       order_ids: selectedIds
     }));
+    
+    // Clear order error if any
+    if (formErrors.order_ids) {
+      setFormErrors(prev => ({
+        ...prev,
+        order_ids: ''
+      }));
+    }
     
     // Check capacity in real-time when orders change
     if (form.truck_id && selectedIds.length > 0) {
@@ -791,16 +915,29 @@ export default function DeliveriesPage() {
     if (orderId == null) return 'ID de commande invalide';
     
     try {
-      // Find order by ID
-      const order = dependencies.orders?.find(o => o && o.id === orderId);
+      // Log available data for debugging
+      console.log('getOrderDetails - orderId:', orderId);
+      console.log('Available orders:', dependencies.orders?.length);
+      console.log('Available clients:', dependencies.clients?.length);
+      console.log('Available products:', dependencies.products?.length);
+      
+      // Find order by ID (convert both to string for comparison to handle number/string ID mismatches)
+      const order = dependencies.orders?.find(o => o && String(o.id) === String(orderId));
+      
       if (!order) {
         console.warn(`Order with ID ${orderId} not found in dependencies.orders`);
+        console.warn('Available order IDs:', dependencies.orders?.map(o => o?.id));
         return `Commande ${orderId} (non trouvée)`;
       }
       
-      // Get client and product details
-      const client = dependencies.clients?.find(c => c && c.id === order.client_id);
-      const product = dependencies.products?.find(p => p && p.id === order.product_id);
+      console.log('Found order:', order);
+      
+      // Get client and product details (convert IDs to string for comparison)
+      const client = dependencies.clients?.find(c => c && String(c.id) === String(order.client_id));
+      const product = dependencies.products?.find(p => p && String(p.id) === String(order.product_id));
+      
+      console.log('Client match:', client);
+      console.log('Product match:', product);
       
       // Format the order date and time
       const orderDate = order.requested_date ? new Date(order.requested_date) : null;
@@ -809,9 +946,9 @@ export default function DeliveriesPage() {
       
       // Format the order details with date and time
       const details = [
-        client?.name || 'Client inconnu',
+        client?.name || `Client inconnu (ID: ${order.client_id})`,
         `${order.quantity || 0}T`,
-        product?.name ? `de ${product.name}` : '',
+        product?.name ? `de ${product.name}` : `Produit inconnu (ID: ${order.product_id})`,
         product?.type ? `(${product.type})` : '',
         `- ${formattedDate}`,
         formattedTime ? `à ${formattedTime}` : ''
@@ -820,7 +957,8 @@ export default function DeliveriesPage() {
       return details;
     } catch (error) {
       console.error('Error in getOrderDetails:', error);
-      return `Commande ${orderId} (erreur d'affichage)`;
+      console.error('Error details:', { orderId, error: error.message });
+      return `Commande ${orderId} (erreur d'affichage: ${error.message})`;
     }
   };
   
@@ -977,64 +1115,218 @@ export default function DeliveriesPage() {
       <Dialog 
         open={historyDialogOpen} 
         onClose={() => setHistoryDialogOpen(false)}
-        maxWidth="sm"
+        maxWidth="md"
         fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            boxShadow: 3
+          }
+        }}
       >
-        <DialogTitle>Historique de la livraison</DialogTitle>
-        <DialogContent>
+        <DialogTitle sx={{ 
+          bgcolor: 'primary.main',
+          color: 'primary.contrastText',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          py: 1.5
+        }}>
+          <Box>
+            <HistoryIcon sx={{ verticalAlign: 'middle', mr: 1 }} />
+            Historique de la livraison
+          </Box>
+          <IconButton 
+            edge="end" 
+            color="inherit" 
+            onClick={() => setHistoryDialogOpen(false)}
+            size="small"
+            sx={{
+              '&:hover': {
+                bgcolor: 'rgba(255, 255, 255, 0.1)'
+              }
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ p: 0, '&.MuiDialogContent-root': { py: 2 } }}>
           {selectedDelivery && selectedDelivery.history && selectedDelivery.history.length > 0 ? (
-            <List>
-              {selectedDelivery.history.map((record, index) => (
-                <React.Fragment key={record.id}>
-                  <ListItem alignItems="flex-start">
-                    <ListItemAvatar>
-                      <Avatar>
-                        {record.changed_by ? record.changed_by.charAt(0).toUpperCase() : 'S'}
-                      </Avatar>
-                    </ListItemAvatar>
-                    <ListItemText
-                      primary={
-                        <>
-                          <Chip 
-                            label={record.status} 
-                            size="small" 
-                            color={statusColors[record.status] || 'default'}
-                            sx={{ mr: 1 }}
-                          />
-                          <Typography component="span" variant="caption" color="textSecondary">
-                            {new Date(record.changed_at).toLocaleString('fr-FR', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </Typography>
-                        </>
-                      }
-                      secondary={
-                        <>
-                          <Typography component="span" variant="body2" color="text.primary">
-                            {record.changed_by || 'Système'}
-                          </Typography>
-                          {record.notes && ` — ${record.notes}`}
-                        </>
-                      }
-                    />
-                  </ListItem>
-                  {index < selectedDelivery.history.length - 1 && <Divider variant="inset" component="li" />}
-                </React.Fragment>
-              ))}
+            <List disablePadding>
+              {selectedDelivery.history.map((record, index) => {
+                const statusColor = statusColors[record.status] || 'default';
+                const prevStatus = selectedDelivery.history[index + 1]?.status;
+                const isStatusChange = record.status !== prevStatus;
+                const formattedDate = new Date(record.changed_at).toLocaleString('fr-FR', {
+                  day: '2-digit',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                });
+                
+                return (
+                  <React.Fragment key={record.id}>
+                    <ListItem 
+                      alignItems="flex-start"
+                      sx={{
+                        transition: 'all 0.2s',
+                        '&:hover': { bgcolor: 'action.hover' },
+                        py: 1.5,
+                        px: 2
+                      }}
+                    >
+                      <ListItemAvatar sx={{ minWidth: 48, mt: 0.5 }}>
+                        <Box sx={{ position: 'relative' }}>
+                          <Avatar 
+                            sx={{ 
+                              bgcolor: isStatusChange ? `${statusColor}.main` : 'grey.200',
+                              color: isStatusChange ? `${statusColor}.contrastText` : 'grey.600',
+                              width: 32,
+                              height: 32,
+                              fontSize: '0.75rem',
+                              boxShadow: 1
+                            }}
+                          >
+                            {record.changed_by ? record.changed_by.charAt(0).toUpperCase() : 'S'}
+                          </Avatar>
+                          {isStatusChange && (
+                            <Box 
+                              sx={{
+                                position: 'absolute',
+                                bottom: -4,
+                                right: -4,
+                                bgcolor: `${statusColor}.main`,
+                                color: `${statusColor}.contrastText`,
+                                borderRadius: '50%',
+                                width: 18,
+                                height: 18,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '0.6rem',
+                                boxShadow: 1
+                              }}
+                            >
+                              <SyncAltIcon fontSize="inherit" />
+                            </Box>
+                          )}
+                        </Box>
+                      </ListItemAvatar>
+                      <ListItemText
+                        primary={
+                          <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+                              <Chip 
+                                label={record.status} 
+                                size="small"
+                                color={statusColor}
+                                sx={{ 
+                                  fontWeight: 600,
+                                  textTransform: 'capitalize',
+                                  '& .MuiChip-label': { px: 1, py: 0.5 },
+                                  height: 22
+                                }}
+                              />
+                              {isStatusChange && prevStatus && (
+                                <Box sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary', fontSize: '0.75rem' }}>
+                                  <ArrowForwardIcon fontSize="inherit" sx={{ mx: 0.5 }} />
+                                  <Chip 
+                                    label={prevStatus}
+                                    size="small"
+                                    variant="outlined"
+                                    sx={{
+                                      height: 22,
+                                      '& .MuiChip-label': { px: 1, py: 0.5 },
+                                      fontSize: '0.7rem',
+                                      bgcolor: 'background.paper'
+                                    }}
+                                  />
+                                </Box>
+                              )}
+                            </Box>
+                            <Typography 
+                              component="span" 
+                              variant="caption" 
+                              color="text.secondary"
+                              sx={{
+                                fontSize: '0.7rem',
+                                whiteSpace: 'nowrap',
+                                bgcolor: 'background.default',
+                                px: 1,
+                                py: 0.25,
+                                borderRadius: 1
+                              }}
+                            >
+                              {formattedDate}
+                            </Typography>
+                          </Box>
+                        }
+                        secondary={
+                          <Box sx={{ mt: 1 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                              <PersonOutlineIcon fontSize="small" color="action" />
+                              <Typography 
+                                variant="body2" 
+                                color="text.primary"
+                                sx={{ fontWeight: 500, fontSize: '0.85rem' }}
+                              >
+                                {record.changed_by || 'Système'}
+                              </Typography>
+                            </Box>
+                            {record.notes && (
+                              <Box 
+                                sx={{
+                                  mt: 1,
+                                  p: 1.5,
+                                  bgcolor: 'background.paper',
+                                  borderRadius: 1,
+                                  borderLeft: `3px solid ${statusColor === 'default' ? 'grey.400' : `${statusColor}.main`}`,
+                                  fontSize: '0.85rem',
+                                  lineHeight: 1.5
+                                }}
+                              >
+                                {record.notes}
+                              </Box>
+                            )}
+                          </Box>
+                        }
+                        sx={{ my: 0, '& .MuiListItemText-primary': { mb: 0.5 } }}
+                      />
+                    </ListItem>
+                    {index < selectedDelivery.history.length - 1 && (
+                      <Divider 
+                        variant="inset" 
+                        component="li" 
+                        sx={{
+                          mx: 0,
+                          ml: '72px',
+                          borderColor: 'divider',
+                          my: 0.5
+                        }}
+                      />
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </List>
           ) : (
-            <Typography variant="body1" color="textSecondary" align="center" sx={{ py: 2 }}>
-              Aucun historique disponible pour cette livraison.
-            </Typography>
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center', 
+              py: 4,
+              textAlign: 'center'
+            }}>
+              <HistoryIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
+              <Typography variant="h6" color="text.secondary" gutterBottom>
+                Aucun historique disponible
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                L'historique des modifications apparaîtra ici.
+              </Typography>
+            </Box>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setHistoryDialogOpen(false)}>Fermer</Button>
-        </DialogActions>
       </Dialog>
 
       {/* Delivery Form Dialog */}
@@ -1043,57 +1335,217 @@ export default function DeliveriesPage() {
         onClose={() => setDialogOpen(false)}
         maxWidth="md"
         fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            boxShadow: 3
+          }
+        }}
       >
-        <DialogTitle>{editDelivery ? 'Modifier la livraison' : 'Nouvelle livraison'}</DialogTitle>
-        <DialogContent>
-          <Box sx={{ mt: 2 }}>
-            <FormControl fullWidth margin="normal">
-              <InputLabel id="order-select-label">Commandes</InputLabel>
+        <DialogTitle sx={{ 
+          bgcolor: 'primary.main',
+          color: 'primary.contrastText',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          py: 1.5
+        }}>
+          <Box>
+            <LocalShippingIcon sx={{ verticalAlign: 'middle', mr: 1 }} />
+            {editDelivery ? 'Modifier la livraison' : 'Nouvelle livraison'}
+          </Box>
+          <IconButton 
+            edge="end" 
+            color="inherit" 
+            onClick={() => setDialogOpen(false)}
+            size="small"
+            sx={{
+              '&:hover': {
+                bgcolor: 'rgba(255, 255, 255, 0.1)'
+              }
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ '&.MuiDialogContent-root': { py: 3 } }}>
+          <Box sx={{ mt: 1 }}>
+            <FormControl fullWidth margin="normal" error={!!formErrors.order_ids}>
+              <InputLabel id="order-select-label">Commandes *</InputLabel>
               <Select
                 labelId="order-select-label"
                 id="order-select"
                 multiple
                 value={form.order_ids || []}
                 onChange={handleOrderSelect}
-                label="Commandes"
+                label="Commandes *"
                 disabled={isViewer}
+                renderValue={(selected) => (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {selected.map((orderId) => {
+                      const order = dependencies.orders?.find(o => o.id === orderId);
+                      if (!order) return null;
+                      return (
+                        <Chip
+                          key={orderId}
+                          label={`${order.client?.name || 'Client inconnu'} - ${order.quantity}t`}
+                          size="small"
+                          sx={{ 
+                            m: 0.5,
+                            bgcolor: 'primary.lighter',
+                            color: 'primary.dark',
+                            '& .MuiChip-deleteIcon': {
+                              color: 'primary.dark',
+                              '&:hover': {
+                                color: 'primary.main'
+                              }
+                            }
+                          }}
+                          onDelete={() => {
+                            handleEditChange('order_ids', form.order_ids.filter(id => id !== orderId));
+                          }}
+                        />
+                      );
+                    })}
+                  </Box>
+                )}
+                MenuProps={{
+                  PaperProps: {
+                    style: {
+                      maxHeight: 300,
+                      width: '100%',
+                    },
+                  },
+                }}
               >
-                {dependencies.orders?.filter(order => order.status === 'en attente' || order.status === 'validée').map((order) => (
-                  <MenuItem key={order.id} value={order.id}>
-                    {order.client?.name} - {order.quantity}t de {order.product?.name}
-                  </MenuItem>
-                ))}
+                {dependencies.orders
+                  ?.filter(order => order.status === 'en attente' || order.status === 'validée')
+                  .sort((a, b) => {
+                    // Sort by client name, then by order date
+                    const clientCompare = (a.client?.name || '').localeCompare(b.client?.name || '');
+                    if (clientCompare !== 0) return clientCompare;
+                    return new Date(b.requested_date) - new Date(a.requested_date);
+                  })
+                  .map((order) => {
+                    const orderDate = order.requested_date 
+                      ? new Date(order.requested_date).toLocaleDateString('fr-FR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: '2-digit'
+                        })
+                      : 'Date inconnue';
+                      
+                    return (
+                      <MenuItem key={order.id} value={order.id}>
+                        <Box sx={{ width: '100%' }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                              {order.client?.name || 'Client inconnu'}
+                            </Typography>
+                            <Chip 
+                              label={`${order.quantity}t`} 
+                              size="small" 
+                              color="primary"
+                              variant="outlined"
+                              sx={{ ml: 1, fontSize: '0.7rem' }}
+                            />
+                          </Box>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+                            <Typography variant="body2" color="text.secondary">
+                              {order.product?.name || 'Produit inconnu'}
+                              {order.product?.type && ` (${order.product.type})`}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {orderDate}
+                            </Typography>
+                          </Box>
+                          {order.notes && (
+                            <Typography 
+                              variant="caption" 
+                              color="text.secondary"
+                              sx={{
+                                display: 'block',
+                                mt: 0.5,
+                                fontStyle: 'italic',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                maxWidth: '100%'
+                              }}
+                            >
+                              {order.notes}
+                            </Typography>
+                          )}
+                        </Box>
+                      </MenuItem>
+                    );
+                  })}
               </Select>
+              {formErrors.order_ids && (
+                <FormHelperText error>{formErrors.order_ids}</FormHelperText>
+              )}
+              {form.order_ids?.length > 0 && (
+                <FormHelperText>
+                  {`${form.order_ids.length} commande(s) sélectionnée(s)`}
+                </FormHelperText>
+              )}
             </FormControl>
 
             <FormControl fullWidth margin="normal">
-              <InputLabel id="truck-select-label">Camion</InputLabel>
+              <InputLabel id="truck-select-label">Camion *</InputLabel>
               <Select
                 labelId="truck-select-label"
                 id="truck-select"
                 value={form.truck_id || ''}
                 onChange={(e) => handleEditChange('truck_id', e.target.value)}
-                label="Camion"
+                label="Camion *"
                 disabled={isViewer}
+                error={!!formErrors.truck_id}
               >
                 <MenuItem value="">
                   <em>Sélectionner un camion</em>
                 </MenuItem>
                 {dependencies.trucks?.map((truck) => (
                   <MenuItem key={truck.id} value={truck.id}>
-                    {truck.plate_number} - {truck.driver_name}
+                    <Box sx={{ width: '100%' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 500 }}>
+                          {truck.plate_number}
+                        </Typography>
+                        <Chip 
+                          label={`${truck.capacity || 0}T`} 
+                          size="small" 
+                          color="primary"
+                          variant="outlined"
+                          sx={{ ml: 1, fontSize: '0.7rem' }}
+                        />
+                      </Box>
+                      <Typography variant="body2" color="text.secondary">
+                        {truck.driver_name || 'Chauffeur non spécifié'}
+                        {truck.phone_number && ` • ${truck.phone_number}`}
+                      </Typography>
+                    </Box>
                   </MenuItem>
                 ))}
               </Select>
+              {formErrors.truck_id && (
+                <FormHelperText error>{formErrors.truck_id}</FormHelperText>
+              )}
             </FormControl>
 
             <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
               <DatePicker
-                label="Date de livraison"
+                label="Date de livraison *"
                 value={form.scheduled_date}
                 onChange={(newValue) => handleEditChange('scheduled_date', newValue)}
                 renderInput={(params) => (
-                  <TextField {...params} fullWidth margin="normal" />
+                  <TextField 
+                    {...params} 
+                    fullWidth 
+                    margin="normal" 
+                    error={!!formErrors.scheduled_date}
+                    helperText={formErrors.scheduled_date}
+                  />
                 )}
                 minDate={new Date()}
                 disabled={isViewer}
@@ -1101,7 +1553,7 @@ export default function DeliveriesPage() {
             </LocalizationProvider>
 
             <TextField
-              label="Heure de livraison"
+              label="Heure de livraison *"
               fullWidth
               margin="normal"
               type="time"
@@ -1125,19 +1577,19 @@ export default function DeliveriesPage() {
                 step: 300, // 5 min
               }}
               disabled={isViewer}
-              error={!!form.scheduled_time && !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(form.scheduled_time)}
-              helperText={form.scheduled_time && !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(form.scheduled_time) 
-                ? 'Format invalide. Utilisez HH:MM (ex: 14:30)' 
-                : ''}
+              error={!!formErrors.scheduled_time}
+              helperText={formErrors.scheduled_time || 'Format: HH:MM (ex: 14:30)'}
             />
 
             <TextField
-              label="Destination"
+              label="Destination *"
               fullWidth
               margin="normal"
-              value={form.destination}
+              value={form.destination || ''}
               onChange={(e) => handleEditChange('destination', e.target.value)}
               disabled={isViewer}
+              error={!!formErrors.destination}
+              helperText={formErrors.destination}
               required
             />
 
@@ -1145,51 +1597,108 @@ export default function DeliveriesPage() {
               label="Notes"
               fullWidth
               margin="normal"
-              value={form.notes}
+              value={form.notes || ''}
               onChange={(e) => handleEditChange('notes', e.target.value)}
               multiline
               rows={3}
               disabled={isViewer}
+              helperText="Informations complémentaires sur la livraison"
             />
 
             <FormControl fullWidth margin="normal">
-              <InputLabel id="status-select-label">Statut</InputLabel>
+              <InputLabel id="status-select-label">Statut *</InputLabel>
               <Select
                 labelId="status-select-label"
                 id="status-select"
                 value={form.status || 'programmé'}
                 onChange={(e) => handleEditChange('status', e.target.value)}
-                label="Statut"
+                label="Statut *"
                 disabled={isViewer}
+                error={!!formErrors.status}
               >
-                <MenuItem value="en attente">En attente</MenuItem>
-                <MenuItem value="programmé">Programmé</MenuItem>
-                <MenuItem value="en cours">En cours</MenuItem>
-                <MenuItem value="livrée">Livrée</MenuItem>
-                <MenuItem value="annulée">Annulée</MenuItem>
+                <MenuItem value="programmé">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <ScheduleIcon color="primary" fontSize="small" />
+                    <span>Programmé</span>
+                  </Box>
+                </MenuItem>
+                <MenuItem value="en cours">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <LocalShippingIcon color="info" fontSize="small" />
+                    <span>En cours</span>
+                  </Box>
+                </MenuItem>
+                <MenuItem value="livrée">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CheckCircleIcon color="success" fontSize="small" />
+                    <span>Livrée</span>
+                  </Box>
+                </MenuItem>
+                <MenuItem value="annulée">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CancelIcon color="error" fontSize="small" />
+                    <span>Annulée</span>
+                  </Box>
+                </MenuItem>
               </Select>
+              {formErrors.status && (
+                <FormHelperText error>{formErrors.status}</FormHelperText>
+              )}
             </FormControl>
 
             {truckCapacity.total > 0 && (
-              <Box mt={2}>
-                <Typography variant="body2" color={truckCapacity.exceeded ? 'error' : 'textSecondary'}>
-                  Capacité du camion: {truckCapacity.used.toFixed(1)}T / {truckCapacity.total.toFixed(1)}T
-                  {truckCapacity.exceeded && ' (Capacité dépassée!)'}
-                </Typography>
+              <Box mt={2} p={1.5} sx={{
+                borderRadius: 1,
+                bgcolor: truckCapacity.exceeded ? 'error.lighter' : 'success.lighter',
+                border: `1px solid ${truckCapacity.exceeded ? 'error.light' : 'success.light'}`,
+              }}>
+                <Box display="flex" alignItems="center" justifyContent="space-between">
+                  <Typography variant="body2" fontWeight={500} color={truckCapacity.exceeded ? 'error.dark' : 'success.dark'}>
+                    Capacité du camion
+                  </Typography>
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <Typography variant="body2" fontWeight={600} color={truckCapacity.exceeded ? 'error.main' : 'success.main'}>
+                      {truckCapacity.used.toFixed(1)}T / {truckCapacity.total.toFixed(1)}T
+                    </Typography>
+                    {truckCapacity.exceeded && (
+                      <Chip 
+                        label="Dépassement" 
+                        size="small" 
+                        color="error"
+                        variant="outlined"
+                        sx={{ fontWeight: 600, fontSize: '0.7rem' }}
+                      />
+                    )}
+                  </Box>
+                </Box>
+                {truckCapacity.exceeded && (
+                  <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
+                    La capacité du camion est dépassée. Veuillez sélectionner un autre camion ou réduire le nombre de commandes.
+                  </Typography>
+                )}
               </Box>
             )}
           </Box>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Annuler</Button>
+        <DialogActions sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Button 
+            onClick={() => setDialogOpen(false)}
+            variant="outlined"
+            color="inherit"
+            disabled={isSaving}
+          >
+            Annuler
+          </Button>
           {!isViewer && (
             <Button 
               onClick={handleSave} 
               variant="contained" 
               color="primary"
               disabled={isSaving || (truckCapacity.exceeded && form.status !== 'annulée')}
+              startIcon={isSaving ? <CircularProgress size={20} color="inherit" /> : null}
+              sx={{ minWidth: 120 }}
             >
-              {isSaving ? <CircularProgress size={24} /> : 'Enregistrer'}
+              {isSaving ? 'Enregistrement...' : 'Enregistrer'}
             </Button>
           )}
         </DialogActions>
