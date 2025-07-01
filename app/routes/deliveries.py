@@ -607,8 +607,6 @@ def delete_delivery(delivery_id):
                     order.quantity += link.quantity
                     db.session.add(order)
 
-        # Delete the delivery-order associations
-        DeliveryOrder.query.filter_by(delivery_id=delivery.id).delete()
         
         # For each order, check if it should be reverted to 'en attente'
         for order_id in order_ids:
