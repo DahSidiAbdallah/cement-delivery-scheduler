@@ -7,6 +7,9 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime, timedelta
 from sqlalchemy import desc, func
 
+# Status strings used for cancelled deliveries (masculine/feminine forms)
+CANCELLED_STATUSES = ['annulée', 'annulé']
+
 
 bp = Blueprint('deliveries', __name__, url_prefix='/deliveries')
 bp.strict_slashes = False
@@ -282,7 +285,7 @@ def update_delivery(delivery_id):
         status_changed = True
 
         # Check if we need to set the delayed flag
-        if delivery.status == 'annulée' and old_status in ['programmé', 'en cours']:
+        if delivery.status in CANCELLED_STATUSES and old_status in ['programmé', 'en cours']:
             delivery.delayed = True
     
     # Handle other simple scalar fields
@@ -351,7 +354,7 @@ def update_delivery(delivery_id):
         if combined <= now:
             # If this is a status update and the delivery is being marked as delayed,
             # allow it even if the date is in the past
-            if not (status_changed and delivery.status == 'annulée' and delivery.delayed):
+            if not (status_changed and delivery.status in CANCELLED_STATUSES and delivery.delayed):
                 return jsonify({"error": "Delivery must be scheduled in the future"}), 400
             
             # If we're updating to a past date, set the delayed flag if not already set
@@ -398,7 +401,7 @@ def update_delivery(delivery_id):
                     order.status = 'livrée'
                     db.session.add(order)
         
-        elif new_status == 'annulée':
+        elif new_status in CANCELLED_STATUSES:
             # When delivery is cancelled, check each order to see if it should be reverted to 'en attente'
             for order_id in order_ids:
                 order = Order.query.get(order_id)
@@ -409,7 +412,7 @@ def update_delivery(delivery_id):
                     ).filter(
                         DeliveryOrder.order_id == order_id,
                         Delivery.id != delivery.id,
-                        ~func.lower(Delivery.status).in_(['annulée', 'livrée'])
+                        ~func.lower(Delivery.status).in_(CANCELLED_STATUSES + ['livrée'])
                     ).count()
                     
                     # If no other active deliveries, revert to 'en attente'
@@ -417,7 +420,7 @@ def update_delivery(delivery_id):
                         order.status = 'en attente'
                         db.session.add(order)
 
-        elif new_status == 'en cours' and old_status != 'annulée':
+        elif new_status == 'en cours' and old_status not in CANCELLED_STATUSES:
             # When delivery is in progress, mark orders as 'en cours'
             for order_id in order_ids:
                 order = Order.query.get(order_id)
@@ -429,7 +432,7 @@ def update_delivery(delivery_id):
                     order.status = 'en cours'
                     db.session.add(order)
 
-        elif new_status in ['programmé', 'en cours'] and old_status == 'annulée':
+        elif new_status in ['programmé', 'en cours'] and old_status in CANCELLED_STATUSES:
             # When reactivating a cancelled delivery, update orders to 'planifié'
             for order_id in order_ids:
                 order = Order.query.get(order_id)
@@ -446,7 +449,7 @@ def update_delivery(delivery_id):
                 if legacy_order:
                     legacy_order.status = 'livrée'
                     db.session.add(legacy_order)
-            elif new_status == 'annulée':
+            elif new_status in CANCELLED_STATUSES:
                 # For legacy orders, just revert to 'en attente' when delivery is cancelled
                 legacy_order = Order.query.get(delivery.order_id)
                 if legacy_order:
@@ -517,7 +520,7 @@ def delete_delivery(delivery_id):
                 ).filter(
                     DeliveryOrder.order_id == order_id,
                     Delivery.id != delivery.id,
-                    ~func.lower(Delivery.status).in_(['annulée', 'livrée'])
+                    ~func.lower(Delivery.status).in_(CANCELLED_STATUSES + ['livrée'])
                 ).count()
                 
                 # If no other active deliveries, revert to 'en attente'
