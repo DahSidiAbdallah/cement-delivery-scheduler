@@ -958,7 +958,7 @@ export default function DeliveriesPage() {
     }
   };
 
-  const getOrderDetails = (orderId) => {
+  const getOrderDetails = (orderId, scheduledQty) => {
     if (orderId == null) return 'ID de commande invalide';
     
     try {
@@ -994,7 +994,7 @@ export default function DeliveriesPage() {
       // Format the order details with date and time
       const details = [
         client?.name || `Client inconnu (ID: ${order.client_id})`,
-        `${order.quantity || 0}T`,
+        `${scheduledQty != null ? scheduledQty : order.quantity || 0}T`,
         product?.name ? `de ${product.name}` : `Produit inconnu (ID: ${order.product_id})`,
         product?.type ? `(${product.type})` : '',
         `- ${formattedDate}`,
@@ -1067,7 +1067,7 @@ export default function DeliveriesPage() {
                   <TableRow key={delivery.id} hover>
                     <TableCell>
                       {delivery.order_ids?.map(orderId => (
-                        <div key={orderId}>{getOrderDetails(orderId)}</div>
+                        <div key={orderId}>{getOrderDetails(orderId, delivery.order_quantities?.[orderId])}</div>
                       )) || 'Aucune commande'}
                     </TableCell>
                     <TableCell>{getTruckDetails(delivery.truck_id)}</TableCell>
@@ -1374,6 +1374,27 @@ export default function DeliveriesPage() {
             </Box>
           )}
         </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmation.open}
+        onClose={() => setDeleteConfirmation({ open: false, id: null })}
+      >
+        <DialogTitle>Confirmer la suppression</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Voulez-vous vraiment supprimer cette livraison ?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmation({ open: false, id: null })} color="inherit" disabled={isDeleting}>
+            Annuler
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained" disabled={isDeleting}>
+            Supprimer
+          </Button>
+        </DialogActions>
       </Dialog>
 
       {/* Delivery Form Dialog */}
