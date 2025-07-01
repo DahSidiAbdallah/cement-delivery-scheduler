@@ -242,6 +242,7 @@ def get_deliveries():
 def update_delivery(delivery_id):
     if request.method == 'OPTIONS':
         return '', 200
+        
     # 1) Parse and validate the URL param
     try:
         delivery_uuid = uuid.UUID(delivery_id)
@@ -255,38 +256,66 @@ def update_delivery(delivery_id):
     # 2) Load JSON and drop any unexpected id
     data = request.get_json(force=True, silent=True) or {}
     data.pop('id', None)
+    
+    # Store original data for history and change detection
+    original_data = {
+        'scheduled_date': delivery.scheduled_date,
+        'scheduled_time': delivery.scheduled_time,
+        'truck_id': delivery.truck_id,
+        'status': delivery.status,
+        'destination': delivery.destination,
+        'notes': delivery.notes
+    }
 
-    # 3) Handle status changes and log history
+    # 3) Get current user and validate
     current_user_id = get_jwt_identity()
     try:
         if isinstance(current_user_id, str):
             current_user_id = uuid.UUID(current_user_id)
     except (ValueError, AttributeError):
         return jsonify({"error": "Invalid user ID format"}), 400
-
+        
+    # Check for rescheduling (date, time, or truck changes)
+    is_rescheduling = False
+    reschedule_details = []
+    
+    # 4) Handle status changes and log history
     status_changed = False
     prev_status = delivery.status.lower() if delivery.status else ''
-
     new_status_raw = data.get('status')
     new_status = new_status_raw.lower() if new_status_raw else None
 
     if new_status is not None and new_status != prev_status:
         # Log the status change in history
+        change_notes = []
+        
+        # Add status change note
+        status_note = f"Statut modifié de {delivery.status} à {new_status}"
+        change_notes.append(status_note)
+        
+        # Check for special status transitions
+        if new_status in CANCELLED_STATUSES and prev_status in ['programmé', 'en cours']:
+            delivery.delayed = True
+            change_notes.append("Livraison marquée comme retardée")
+            
+        # Create history entry
         history = DeliveryHistory(
             delivery_id=delivery.id,
             status=new_status,
             changed_by=current_user_id,
-            notes=f"Status changed from {delivery.status} to {new_status}"
+            change_type='status_change',
+            previous_data={
+                'status': delivery.status,
+                'changed_at': datetime.utcnow().isoformat(),
+                'changed_by': str(current_user_id)
+            },
+            notes=' | '.join(change_notes)
         )
         db.session.add(history)
-
+        
         # Update the status
         delivery.status = new_status
         status_changed = True
-
-        # Check if we need to set the delayed flag
-        if delivery.status in CANCELLED_STATUSES and prev_status in ['programmé', 'en cours']:
-            delivery.delayed = True
     
     # Handle other simple scalar fields
     if 'destination' in data:
@@ -344,19 +373,57 @@ def update_delivery(delivery_id):
             # optional: check Order.exists here
             db.session.add(DeliveryOrder(delivery_id=delivery.id, order_id=oid))
 
-    # 7) Business checks: future date & unique slot
+    # 7) Check for rescheduling (date, time, or truck changes)
+    if any(field in data for field in ['scheduled_date', 'scheduled_time', 'truck_id']):
+        # Check what exactly changed
+        changes = []
+        
+        if 'scheduled_date' in data and str(original_data['scheduled_date']) != str(delivery.scheduled_date):
+            changes.append(f"Date: {original_data['scheduled_date']} → {delivery.scheduled_date}")
+            is_rescheduling = True
+            
+        if 'scheduled_time' in data and str(original_data.get('scheduled_time') or '') != str(delivery.scheduled_time or ''):
+            changes.append(f"Heure: {original_data.get('scheduled_time')} → {delivery.scheduled_time}")
+            is_rescheduling = True
+            
+        if 'truck_id' in data and str(original_data.get('truck_id') or '') != str(delivery.truck_id or ''):
+            old_truck = Truck.query.get(original_data.get('truck_id'))
+            new_truck = Truck.query.get(delivery.truck_id) if delivery.truck_id else None
+            changes.append(f"Camion: {getattr(old_truck, 'plate_number', 'Aucun')} → {getattr(new_truck, 'plate_number', 'Aucun')}")
+            is_rescheduling = True
+        
+        if is_rescheduling and changes:
+            # Create a history entry for the reschedule
+            history = DeliveryHistory(
+                delivery_id=delivery.id,
+                status=delivery.status,
+                changed_by=current_user_id,
+                change_type='reschedule',
+                previous_data={
+                    'scheduled_date': original_data['scheduled_date'].isoformat() if original_data['scheduled_date'] else None,
+                    'scheduled_time': str(original_data['scheduled_time']) if original_data['scheduled_time'] else None,
+                    'truck_id': str(original_data['truck_id']) if original_data['truck_id'] else None,
+                    'changed_at': datetime.utcnow().isoformat(),
+                    'changed_by': str(current_user_id)
+                },
+                notes="Reprogrammation de la livraison: " + ", ".join(changes)
+            )
+            db.session.add(history)
+            
+            # If rescheduling to a future date and status was delayed, clear the delay
+            if delivery.delayed and delivery.scheduled_date and delivery.scheduled_date >= datetime.utcnow().date():
+                delivery.delayed = False
+                history.notes += " | Retard annulé (nouvelle date dans le futur)"
+    
+    # 8) Business checks: future date & unique slot
     if delivery.scheduled_date:
         combined = datetime.combine(
             delivery.scheduled_date,
             delivery.scheduled_time or datetime.min.time()
         )
         now = datetime.now()
-        if combined <= now:
-            # If this is a status update and the delivery is being marked as delayed,
-            # allow it even if the date is in the past
-            if not (status_changed and delivery.status in CANCELLED_STATUSES and delivery.delayed):
-                return jsonify({"error": "Delivery must be scheduled in the future"}), 400
-            
+        
+        if combined <= now and not (status_changed and delivery.status in CANCELLED_STATUSES):
             # If we're updating to a past date, set the delayed flag if not already set
             if not delivery.delayed:
                 delivery.delayed = True
@@ -365,117 +432,72 @@ def update_delivery(delivery_id):
                     delivery_id=delivery.id,
                     status=delivery.status,
                     changed_by=current_user_id,
-                    notes="Delivery marked as delayed due to past scheduled date"
+                    change_type='delay',
+                    notes="Livraison marquée comme retardée (date/heure dans le passé)",
+                    previous_data={
+                        'delayed': False,
+                        'changed_at': datetime.utcnow().isoformat(),
+                        'changed_by': str(current_user_id)
+                    }
                 )
                 db.session.add(history)
-
-    clash = Delivery.query.filter(
-        Delivery.id != delivery.id,
-        Delivery.truck_id == delivery.truck_id,
-        Delivery.scheduled_date == delivery.scheduled_date,
-        Delivery.scheduled_time == delivery.scheduled_time
-    ).first()
-    if clash:
-        return jsonify({"error": "Truck already booked for this time"}), 400
-
-    # Handle status changes and update associated orders
-    if status_changed:
-        new_status = delivery.status.lower() if delivery.status else None
-        old_status = prev_status
-        
-        # Get all orders associated with this delivery
-        order_links = DeliveryOrder.query.filter_by(delivery_id=delivery.id).all()
-        order_ids = [link.order_id for link in order_links]
-        
-        # Handle different status transitions
-        if new_status == 'livrée':
-            # When delivery is marked as delivered, update all associated orders to 'livrée'
-            for order_id in order_ids:
-                order = Order.query.get(order_id)
-                if order:
-                    order.status = 'livrée'
-                    db.session.add(order)
-        
-        elif new_status in CANCELLED_STATUSES:
-            # When delivery is cancelled, check each order to see if it should be reverted to 'en attente'
-            for order_id in order_ids:
-                order = Order.query.get(order_id)
-                if order:
-                    # Check if this order has other active deliveries
-                    other_deliveries = db.session.query(Delivery).join(
-                        DeliveryOrder, Delivery.id == DeliveryOrder.delivery_id
-                    ).filter(
-                        DeliveryOrder.order_id == order_id,
-                        Delivery.id != delivery.id,
-                        ~func.lower(Delivery.status).in_(CANCELLED_STATUSES + ['livrée'])
-                    ).count()
-                    
-                    # If no other active deliveries, revert to 'en attente'
-                    if other_deliveries == 0:
-                        order.status = 'en attente'
-                        db.session.add(order)
-
-        elif new_status == 'en cours' and old_status not in CANCELLED_STATUSES:
-            # When delivery is in progress, mark orders as 'en cours'
-            for order_id in order_ids:
-                order = Order.query.get(order_id)
-
-                if order and order.status and order.status.lower() in ['planifié', 'en attente']:
-
-               
-
-                    order.status = 'en cours'
-                    db.session.add(order)
-
-        elif new_status in ['programmé', 'en cours'] and old_status in CANCELLED_STATUSES:
-            # When reactivating a cancelled delivery, update orders to 'planifié'
-            for order_id in order_ids:
-                order = Order.query.get(order_id)
-                if order and order.status and order.status.lower() == 'en attente':
-                    order.status = 'planifié'
-                    db.session.add(order)
-        
-        # Also handle the legacy single order_id if it exists
-        if delivery.order_id and delivery.order_id not in order_ids:
-            order_ids.append(delivery.order_id)
             
-            if new_status == 'livrée':
-                legacy_order = Order.query.get(delivery.order_id)
-                if legacy_order:
-                    legacy_order.status = 'livrée'
-                    db.session.add(legacy_order)
-            elif new_status in CANCELLED_STATUSES:
-                # For legacy orders, just revert to 'en attente' when delivery is cancelled
-                legacy_order = Order.query.get(delivery.order_id)
-                if legacy_order:
-                    legacy_order.status = 'en attente'
-                    db.session.add(legacy_order)
+            # Only block if this is not a status update to a cancelled status
+            if not (status_changed and delivery.status in CANCELLED_STATUSES):
+                return jsonify({
+                    "error": "La livraison doit être programmée dans le futur",
+                    "code": "PAST_DELIVERY_DATE"
+                }), 400
 
-    # 8) Commit
+    # Check for scheduling conflicts
+    if delivery.truck_id and delivery.scheduled_date:
+        clash = Delivery.query.filter(
+            Delivery.id != delivery.id,
+            Delivery.truck_id == delivery.truck_id,
+            Delivery.scheduled_date == delivery.scheduled_date,
+            Delivery.scheduled_time == delivery.scheduled_time,
+            ~Delivery.status.in_(CANCELLED_STATUSES + ['livrée'])
+        ).first()
+        
+        if clash:
+            return jsonify({"error": "Truck already booked for this time"}), 400
+    
+    # Commit all changes
     try:
         db.session.commit()
         
-        # Return the updated delivery with its history
-        delivery_data = {
-            'id': delivery.id,
-            'status': delivery.status,
-            'delayed': delivery.delayed,
-            'history': [{
-                'id': h.id,
-                'status': h.status,
-                'changed_at': h.changed_at.isoformat(),
-                'changed_by': h.user.username if h.user else None,
-                'notes': h.notes
-            } for h in delivery.history]
+        # Get the latest history for the response
+        latest_history = DeliveryHistory.query.filter_by(delivery_id=delivery.id)\
+            .order_by(DeliveryHistory.changed_at.desc())\
+            .first()
+        
+        # Prepare response data
+        response_data = {
+            'message': 'Livraison mise à jour avec succès',
+            'is_reschedule': is_rescheduling,
+            'delivery': {
+                'id': str(delivery.id),
+                'status': delivery.status,
+                'scheduled_date': delivery.scheduled_date.isoformat() if delivery.scheduled_date else None,
+                'scheduled_time': delivery.scheduled_time.strftime('%H:%M') if delivery.scheduled_time else None,
+                'truck_id': str(delivery.truck_id) if delivery.truck_id else None,
+                'destination': delivery.destination,
+                'notes': delivery.notes,
+                'delayed': delivery.delayed,
+                'last_updated': delivery.last_updated.isoformat() if delivery.last_updated else None
+            }
         }
         
-        return jsonify({"message": "Delivery updated", "delivery": delivery_data}), 200
+        # Include previous data if this was a reschedule
+        if delivery.history and len(delivery.history) > 0 and delivery.history[0].change_type == 'reschedule':
+            response_data['previous_data'] = delivery.history[0].previous_data
+        
+        return jsonify(response_data), 200
+        
     except Exception as e:
         db.session.rollback()
-        logging.exception("Failed to update delivery")
-        return jsonify({"error": "Server error", "details": str(e)}), 500
-
-
+        logging.error(f"Error updating delivery {delivery_id}: {str(e)}")
+        return jsonify({'error': 'An error occurred while updating the delivery'}), 500
 @bp.route('/<delivery_id>', methods=['DELETE', 'OPTIONS'])
 @jwt_required()
 def delete_delivery(delivery_id):
