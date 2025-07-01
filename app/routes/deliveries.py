@@ -127,14 +127,12 @@ def create_delivery():
         )
         db.session.add(history)
         
-        # Add order associations and update order statuses
+        # Add order associations and update order statuses only when delivery is active
         for oid in order_ids:
-            # Create the delivery-order association
             db.session.add(DeliveryOrder(delivery_id=new_delivery.id, order_id=oid))
-            
-            # Update the order status based on delivery status
+
             order = Order.query.get(oid)
-            if order and order.status == 'en attente':
+            if order and order.status == 'en attente' and status in ['programmé', 'en cours', 'Programmé', 'En cours']:
                 order.status = 'planifié'
                 db.session.add(order)
         
