@@ -110,8 +110,10 @@ def create_delivery():
         except (ValueError, AttributeError):
             return jsonify({"error": "Invalid user ID format"}), 400
         
-        # Set default status if not provided
-        status = data.get('status', 'Programmé')
+        # Set default status if not provided and normalize case
+        status = data.get('status', 'programmé')
+        if status:
+            status = status.lower()
         
         # Create the delivery
         new_delivery = Delivery(
@@ -139,7 +141,7 @@ def create_delivery():
             db.session.add(DeliveryOrder(delivery_id=new_delivery.id, order_id=oid))
 
             order = Order.query.get(oid)
-            if order and order.status == 'en attente' and status in ['programmé', 'en cours', 'Programmé', 'En cours']:
+            if order and order.status == 'en attente' and status in ['programmé', 'en cours']:
                 order.status = 'planifié'
                 db.session.add(order)
         
@@ -256,24 +258,27 @@ def update_delivery(delivery_id):
         return jsonify({"error": "Invalid user ID format"}), 400
 
     status_changed = False
-    
-    if 'status' in data and data['status'] != delivery.status:
+
+    new_status_raw = data.get('status')
+    new_status = new_status_raw.lower() if new_status_raw else None
+
+    if new_status is not None and new_status != (delivery.status or '').lower():
         # Log the status change in history
         history = DeliveryHistory(
             delivery_id=delivery.id,
-            status=data['status'],
+            status=new_status,
             changed_by=current_user_id,
-            notes=f"Status changed from {delivery.status} to {data['status']}"
+            notes=f"Status changed from {delivery.status} to {new_status}"
         )
         db.session.add(history)
-        
+
         # Update the status
-        old_status = delivery.status
-        delivery.status = data['status']
+        old_status = delivery.status.lower() if delivery.status else ''
+        delivery.status = new_status
         status_changed = True
-        
+
         # Check if we need to set the delayed flag
-        if delivery.status == 'annulée' and old_status in ['programmée', 'en cours']:
+        if delivery.status == 'annulée' and old_status in ['programmé', 'en cours']:
             delivery.delayed = True
     
     # Handle other simple scalar fields
@@ -367,9 +372,14 @@ def update_delivery(delivery_id):
         return jsonify({"error": "Truck already booked for this time"}), 400
 
     # Handle status changes and update associated orders
-    if 'status' in data and data['status'] != delivery.status:
-        new_status = data['status']
-        old_status = delivery.status
+    if 'status' in data:
+        new_status = data['status'].lower() if data['status'] else None
+        old_status = delivery.status.lower() if delivery.status else ''
+    else:
+        new_status = None
+        old_status = delivery.status.lower() if delivery.status else ''
+
+    if new_status and new_status != old_status:
         
         # Get all orders associated with this delivery
         order_links = DeliveryOrder.query.filter_by(delivery_id=delivery.id).all()
@@ -402,7 +412,15 @@ def update_delivery(delivery_id):
                     if other_deliveries == 0:
                         order.status = 'en attente'
                         db.session.add(order)
-        
+
+        elif new_status == 'en cours' and old_status != 'annulée':
+            # When delivery is in progress, mark orders as 'en cours'
+            for order_id in order_ids:
+                order = Order.query.get(order_id)
+                if order and order.status in ['planifié', 'en attente']:
+                    order.status = 'en cours'
+                    db.session.add(order)
+
         elif new_status in ['programmé', 'en cours'] and old_status == 'annulée':
             # When reactivating a cancelled delivery, update orders to 'planifié'
             for order_id in order_ids:
