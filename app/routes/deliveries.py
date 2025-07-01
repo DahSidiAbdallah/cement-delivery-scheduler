@@ -2,10 +2,9 @@ import logging
 import uuid
 from flask import Blueprint, request, jsonify
 from app.models import db, Delivery, DeliveryHistory, DeliveryOrder, Order, Truck, User
-from app.extensions import db
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime, timedelta
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, text
 
 # Status strings used for cancelled deliveries (masculine/feminine forms)
 CANCELLED_STATUSES = ['annulée', 'annulé']
@@ -97,14 +96,29 @@ def create_delivery():
 
         # 4. Respect truck capacity
         truck = Truck.query.get(data['truck_id'])
-        total_qty = 0
-        for oid in order_ids:
-            order = Order.query.get(oid)
-            if not order:
-                return jsonify({"error": f"Order {oid} not found"}), 400
-            total_qty += order.quantity
-        if truck and truck.capacity and total_qty > truck.capacity:
-            return jsonify({"error": "Truck capacity exceeded"}), 400
+        if truck and truck.capacity is not None:  # Only check if truck has a defined capacity
+            total_qty = 0
+            for oid in order_ids:
+                # Use the quantity from order_quantities if provided, otherwise use the full order quantity
+                qty = data.get('order_quantities', {}).get(str(oid))
+                if qty is None:
+                    order = Order.query.get(oid)
+                    if not order:
+                        return jsonify({"error": f"Order {oid} not found"}), 400
+                    qty = order.quantity
+                else:
+                    try:
+                        qty = float(qty)
+                    except (ValueError, TypeError):
+                        return jsonify({"error": f"Invalid quantity for order {oid}"}), 400
+                
+                total_qty += qty
+            
+            if total_qty > truck.capacity:
+                return jsonify({
+                    "error": "Truck capacity exceeded",
+                    "details": f"Total quantity ({total_qty}) exceeds truck capacity ({truck.capacity})"
+                }), 400
 
         # Get the current user ID for history tracking
         current_user_id = get_jwt_identity()

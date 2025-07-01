@@ -813,7 +813,18 @@ export default function DeliveriesPage() {
       
     } catch (error) {
       console.error('Error saving delivery:', error);
-      const errorMessage = parseApiError(error, 'Erreur lors de la sauvegarde de la livraison');
+      let errorMessage = 'Erreur lors de la sauvegarde de la livraison';
+      
+      // Handle specific error for truck capacity
+      if (error.response?.data?.error === 'Truck capacity exceeded') {
+        errorMessage = error.response.data.details || 'La capacité du camon est dépassée. Veuillez sélectionner un autre camion ou réduire la quantité de commandes.';
+      } else if (error.response?.data?.details) {
+        errorMessage = error.response.data.details;
+      } else if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
 
       setSnackbar({
         message: errorMessage,
