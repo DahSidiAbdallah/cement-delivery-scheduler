@@ -197,6 +197,7 @@ export default function DeliveriesPage() {
     destination: '',
     notes: ''
   });
+  const [orderQuantities, setOrderQuantities] = useState({});
   const [formErrors, setFormErrors] = useState({
     order_ids: '',
     truck_id: '',
@@ -387,6 +388,7 @@ export default function DeliveriesPage() {
           destination: delivery.destination || '',
           notes: delivery.notes || ''
         });
+        setOrderQuantities(delivery.order_quantities || {});
         
         // If we have a truck ID, trigger capacity check
         if (delivery.truck_id && orderIds.length > 0) {
@@ -403,6 +405,7 @@ export default function DeliveriesPage() {
           destination: '',
           notes: ''
         });
+        setOrderQuantities({});
         setTruckCapacity({ used: 0, total: 0, exceeded: false });
       }
     } catch (error) {
@@ -415,6 +418,7 @@ export default function DeliveriesPage() {
         scheduled_time: '',
         status: 'programmé'
       });
+      setOrderQuantities({});
       setTruckCapacity({ used: 0, total: 0, exceeded: false });
       setSnackbar({ 
         message: 'Erreur lors du chargement de la livraison', 
@@ -452,19 +456,16 @@ export default function DeliveriesPage() {
 
   // Calculate total quantity of selected orders
   const calculateTotalQuantity = useCallback((orderIds) => {
-    if (!orderIds || !orderIds.length || !dependencies.orders) return 0;
-    
+    if (!orderIds || !orderIds.length) return 0;
+
     const total = orderIds.reduce((sum, orderId) => {
-      const order = dependencies.orders.find(o => o && o.id === orderId);
-      if (!order) return sum;
-      
-      const quantity = parseFloat(order.quantity);
-      return isNaN(quantity) ? sum : sum + quantity;
+      const qty = parseFloat(orderQuantities[orderId]);
+      return isNaN(qty) ? sum : sum + qty;
     }, 0);
     
     console.log('Calculated total quantity:', { orderIds, total });
     return total;
-  }, [dependencies.orders]);
+  }, [orderQuantities]);
 
   // Check if selected orders exceed truck capacity
   const checkTruckCapacity = useCallback((truckId, orderIds) => {
@@ -531,6 +532,19 @@ export default function DeliveriesPage() {
     if (!form.order_ids || form.order_ids.length === 0) {
       errors.order_ids = 'Veuillez sélectionner au moins une commande';
       isValid = false;
+    } else {
+      // Validate quantities for each selected order
+      form.order_ids.forEach(id => {
+        const qty = parseFloat(orderQuantities[id]);
+        const order = dependencies.orders.find(o => o.id === id);
+        if (isNaN(qty) || qty <= 0) {
+          errors.order_ids = 'Quantité invalide pour certaines commandes';
+          isValid = false;
+        } else if (order && qty > parseFloat(order.quantity)) {
+          errors.order_ids = 'Quantité supérieure au disponible';
+          isValid = false;
+        }
+      });
     }
     
     // Validate truck
@@ -733,9 +747,9 @@ export default function DeliveriesPage() {
       // Prepare the payload
       const payload = {
         // Only include order_id if we have orders (for backward compatibility)
-        ...(orderIds.length > 0 && { 
+        ...(orderIds.length > 0 && {
           order_id: orderIds[0],
-          order_ids: orderIds 
+          order_ids: orderIds
         }),
         scheduled_date: formatDateForAPI(form.scheduled_date || new Date()),
         scheduled_time: form.scheduled_time ? formatTimeForAPI(form.scheduled_time) : null,
@@ -743,6 +757,13 @@ export default function DeliveriesPage() {
         destination: form.destination || '',
         notes: form.notes || ''
       };
+
+      if (orderIds.length > 0) {
+        payload.order_quantities = {};
+        orderIds.forEach(id => {
+          payload.order_quantities[id] = parseFloat(orderQuantities[id] || 0);
+        });
+      }
       
       // Handle truck_id - always include it in the payload when updating
       // Convert empty string to null for the backend
@@ -788,6 +809,7 @@ export default function DeliveriesPage() {
         destination: '',
         notes: ''
       });
+      setOrderQuantities({});
       
     } catch (error) {
       console.error('Error saving delivery:', error);
@@ -866,12 +888,29 @@ export default function DeliveriesPage() {
 
   const handleOrderSelect = async (event) => {
     const selectedIds = event.target.value;
-    
+
     // Update form and clear any previous order errors
     setForm(prev => ({
       ...prev,
       order_ids: selectedIds
     }));
+
+    // Initialize quantities for new selections and remove unselected ones
+    setOrderQuantities(prev => {
+      const updated = { ...prev };
+      selectedIds.forEach(id => {
+        if (!(id in updated)) {
+          const order = dependencies.orders?.find(o => o.id === id);
+          updated[id] = order ? order.quantity : '';
+        }
+      });
+      Object.keys(updated).forEach(id => {
+        if (!selectedIds.includes(id)) {
+          delete updated[id];
+        }
+      });
+      return updated;
+    });
     
     // Clear order error if any
     if (formErrors.order_ids) {
@@ -886,6 +925,14 @@ export default function DeliveriesPage() {
       await checkTruckCapacity(form.truck_id, selectedIds);
     } else {
       setTruckCapacity({ used: 0, total: 0, exceeded: false });
+    }
+  };
+
+  const handleQuantityChange = (orderId, value) => {
+    setOrderQuantities(prev => ({ ...prev, [orderId]: value }));
+
+    if (form.truck_id && form.order_ids?.length > 0) {
+      checkTruckCapacity(form.truck_id, form.order_ids);
     }
   };
 
@@ -1489,6 +1536,29 @@ export default function DeliveriesPage() {
                   {`${form.order_ids.length} commande(s) sélectionnée(s)`}
                 </FormHelperText>
               )}
+              {form.order_ids?.map((oid) => {
+                const order = dependencies.orders?.find(o => o.id === oid);
+                if (!order) return null;
+                return (
+                  <Box key={oid} sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+                    <Typography variant="body2" sx={{ flexGrow: 1 }}>
+                      {order.client?.name || 'Client'} - {order.product?.name || ''}
+                    </Typography>
+                    <TextField
+                      label="Qté"
+                      type="number"
+                      size="small"
+                      value={orderQuantities[oid] ?? ''}
+                      onChange={(e) => handleQuantityChange(oid, e.target.value)}
+                      inputProps={{ min: 0, max: order.quantity, step: 0.1 }}
+                      sx={{ width: 80 }}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      / {order.quantity}t
+                    </Typography>
+                  </Box>
+                );
+              })}
             </FormControl>
 
             <FormControl fullWidth margin="normal">

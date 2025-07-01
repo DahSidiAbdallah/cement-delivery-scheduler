@@ -74,12 +74,14 @@ def update_delivery_schema():
                 CREATE TABLE IF NOT EXISTS delivery_orders (
                     delivery_id UUID NOT NULL,
                     order_id UUID NOT NULL,
+                    quantity FLOAT NOT NULL DEFAULT 0,
+                    quantity_deducted BOOLEAN NOT NULL DEFAULT FALSE,
                     PRIMARY KEY (delivery_id, order_id),
                     FOREIGN KEY(delivery_id) REFERENCES deliveries (id) ON DELETE CASCADE,
                     FOREIGN KEY(order_id) REFERENCES orders (id) ON DELETE CASCADE
                 )
             """))
-            
+        
             # Migrate existing order-delivery relationships
             print("Migrating order-delivery relationships...")
             deliveries = db.session.execute("""
@@ -95,6 +97,16 @@ def update_delivery_schema():
                     'delivery_id': delivery[0],
                     'order_id': delivery[1]
                 })
+
+        else:
+            # Add missing columns to delivery_orders if needed
+            delivery_order_cols = {c['name'] for c in inspector.get_columns('delivery_orders')}
+            if 'quantity' not in delivery_order_cols:
+                print('Adding quantity column to delivery_orders...')
+                db.session.execute(text('ALTER TABLE delivery_orders ADD COLUMN quantity FLOAT NOT NULL DEFAULT 0'))
+            if 'quantity_deducted' not in delivery_order_cols:
+                print('Adding quantity_deducted column to delivery_orders...')
+                db.session.execute(text('ALTER TABLE delivery_orders ADD COLUMN quantity_deducted BOOLEAN NOT NULL DEFAULT FALSE'))
         
         # Commit all schema changes
         db.session.commit()
