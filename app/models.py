@@ -36,6 +36,18 @@ class Order(db.Model):
     status = db.Column(db.String(20), nullable=False, default="Pending")
     client = db.relationship('Client', backref='orders')  # <--- add this line!
 
+class DeliveryHistory(db.Model):
+    __tablename__ = 'delivery_history'
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    delivery_id = db.Column(UUID(as_uuid=True), db.ForeignKey('deliveries.id', ondelete='CASCADE'), nullable=False)
+    status = db.Column(db.String(20), nullable=False)
+    changed_by = db.Column(UUID(as_uuid=True), db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    changed_at = db.Column(db.DateTime, nullable=False, server_default=db.func.now())
+    notes = db.Column(db.Text, nullable=True)
+    
+    # Relationships
+    user = db.relationship('User')
+
 class Delivery(db.Model):
     __tablename__ = 'deliveries'
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -47,8 +59,13 @@ class Delivery(db.Model):
     status = db.Column(db.String(20), default="Scheduled")
     destination = db.Column(db.String(200), nullable=False)
     notes = db.Column(db.Text, nullable=True)
+    delayed = db.Column(db.Boolean, default=False, nullable=False)
+    
+    # Relationships
     orders = db.relationship('Order', secondary='delivery_orders', backref='deliveries')
     order_links = db.relationship('DeliveryOrder', backref='delivery', cascade='all, delete-orphan')
+    history = db.relationship('DeliveryHistory', backref='delivery', cascade='all, delete-orphan', 
+                             order_by='desc(DeliveryHistory.changed_at)')
 
 
 class DeliveryOrder(db.Model):

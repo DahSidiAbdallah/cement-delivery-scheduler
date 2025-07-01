@@ -1,10 +1,11 @@
 import logging
 import uuid
 from flask import Blueprint, request, jsonify
-from app.models import Delivery, DeliveryOrder, Order, Truck
+from app.models import Delivery, DeliveryHistory, DeliveryOrder, Order, Truck, User
 from app.extensions import db
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from datetime import datetime
+from datetime import datetime, timedelta
+from sqlalchemy import desc
 
 bp = Blueprint('deliveries', __name__, url_prefix='/deliveries')
 bp.strict_slashes = False
@@ -99,21 +100,62 @@ def create_delivery():
         if truck and truck.capacity and total_qty > truck.capacity:
             return jsonify({"error": "Truck capacity exceeded"}), 400
 
+        # Get the current user ID for history tracking
+        current_user_id = get_jwt_identity()
+        
+        # Set default status if not provided
+        status = data.get('status', 'Programmé')
+        
+        # Create the delivery
         new_delivery = Delivery(
             truck_id=data['truck_id'],
             scheduled_date=data.get('scheduled_date'),
             scheduled_time=data.get('scheduled_time'),
-            status=data.get('status', 'Programmé'),
+            status=status,
             destination=data.get('destination', ''),
             notes=data.get('notes', '')
         )
         db.session.add(new_delivery)
-        db.session.flush()
+        db.session.flush()  # Get the ID for the new delivery
+        
+        # Add initial status to history
+        history = DeliveryHistory(
+            delivery_id=new_delivery.id,
+            status=status,
+            changed_by=current_user_id,
+            notes="Initial status"
+        )
+        db.session.add(history)
+        
+        # Add order associations and update order statuses
         for oid in order_ids:
+            # Create the delivery-order association
             db.session.add(DeliveryOrder(delivery_id=new_delivery.id, order_id=oid))
+            
+            # Update the order status based on delivery status
+            order = Order.query.get(oid)
+            if order and order.status == 'en attente':
+                order.status = 'planifié'
+                db.session.add(order)
+        
         db.session.commit()
         logging.info(f"Delivery created with ID: {new_delivery.id}")
-        return jsonify({"message": "Delivery created", "delivery_id": str(new_delivery.id)}), 201
+        
+        # Return the created delivery with its history
+        delivery_data = {
+            'id': str(new_delivery.id),
+            'status': new_delivery.status,
+            'delayed': new_delivery.delayed,
+            'history': [{
+                'id': history.id,
+                'status': history.status,
+                'changed_at': history.changed_at.isoformat(),
+                'changed_by': None,  # Will be loaded if include_history=true
+                'notes': history.notes
+            }]
+        }
+        
+        return jsonify({"message": "Delivery created", "delivery": delivery_data}), 201
     except Exception as e:
         logging.exception("Exception occurred while creating delivery")
         return jsonify({"error": "Server error", "details": str(e)}), 500
@@ -127,22 +169,55 @@ def get_deliveries():
         logging.debug(f"Request headers: {dict(request.headers)}")
         identity = get_jwt_identity()
         logging.debug(f"JWT identity: {identity}")
-        deliveries = Delivery.query.all()
+        
+        # Get the include_history parameter
+        include_history = request.args.get('include_history', 'false').lower() == 'true'
+        
+        # Base query
+        query = Delivery.query
+        
+        # If history is requested, join with DeliveryHistory and User
+        if include_history:
+            from sqlalchemy.orm import joinedload
+            query = query.options(
+                joinedload(Delivery.history).joinedload(DeliveryHistory.user)
+            )
+        
+        # Execute query
+        deliveries = query.all()
         result = []
+        
         for delivery in deliveries:
+            # Get all order IDs for this delivery
             order_ids = [str(o.id) for o in delivery.orders]
             if delivery.order_id:
                 order_ids.append(str(delivery.order_id))
-            result.append({
-                "id": str(delivery.id),
-                "order_ids": order_ids,
-                "truck_id": str(delivery.truck_id),
-                "scheduled_date": delivery.scheduled_date.isoformat() if delivery.scheduled_date else None,
-                "scheduled_time": str(delivery.scheduled_time) if delivery.scheduled_time else None,
-                "status": delivery.status,
-                "destination": delivery.destination,
-                "notes": delivery.notes
-            })
+            
+            # Build delivery data
+            delivery_data = {
+                'id': str(delivery.id),
+                'order_ids': list(set(order_ids)),  # Remove duplicates if any
+                'truck_id': str(delivery.truck_id) if delivery.truck_id else None,
+                'scheduled_date': delivery.scheduled_date.isoformat() if delivery.scheduled_date else None,
+                'scheduled_time': str(delivery.scheduled_time) if delivery.scheduled_time else None,
+                'status': delivery.status,
+                'destination': delivery.destination,
+                'notes': delivery.notes,
+                'delayed': delivery.delayed
+            }
+            
+            # Add history if requested
+            if include_history and hasattr(delivery, 'history'):
+                delivery_data['history'] = [{
+                    'id': str(h.id),
+                    'status': h.status,
+                    'changed_at': h.changed_at.isoformat(),
+                    'changed_by': h.user.username if h.user else None,
+                    'notes': h.notes
+                } for h in sorted(delivery.history, key=lambda x: x.changed_at, reverse=True)]
+            
+            result.append(delivery_data)
+            
         return jsonify(result), 200
     except Exception as e:
         logging.exception("Exception occurred while getting deliveries")
@@ -165,11 +240,32 @@ def update_delivery(delivery_id):
     data = request.get_json(force=True, silent=True) or {}
     data.pop('id', None)
 
-    # 3) Handle simple scalar fields
+    # 3) Handle status changes and log history
+    current_user_id = get_jwt_identity()
+    status_changed = False
+    
+    if 'status' in data and data['status'] != delivery.status:
+        # Log the status change in history
+        history = DeliveryHistory(
+            delivery_id=delivery.id,
+            status=data['status'],
+            changed_by=current_user_id,
+            notes=f"Status changed from {delivery.status} to {data['status']}"
+        )
+        db.session.add(history)
+        
+        # Update the status
+        old_status = delivery.status
+        delivery.status = data['status']
+        status_changed = True
+        
+        # Check if we need to set the delayed flag
+        if delivery.status == 'annulée' and old_status in ['programmée', 'en cours']:
+            delivery.delayed = True
+    
+    # Handle other simple scalar fields
     if 'destination' in data:
         delivery.destination = data['destination'] or ''
-    if 'status' in data:
-        delivery.status = data['status']
     if 'notes' in data:
         delivery.notes = data['notes'] or ''
 
@@ -229,8 +325,24 @@ def update_delivery(delivery_id):
             delivery.scheduled_date,
             delivery.scheduled_time or datetime.min.time()
         )
-        if combined <= datetime.now():
-            return jsonify({"error": "Delivery must be scheduled in the future"}), 400
+        now = datetime.now()
+        if combined <= now:
+            # If this is a status update and the delivery is being marked as delayed,
+            # allow it even if the date is in the past
+            if not (status_changed and delivery.status == 'annulée' and delivery.delayed):
+                return jsonify({"error": "Delivery must be scheduled in the future"}), 400
+            
+            # If we're updating to a past date, set the delayed flag if not already set
+            if not delivery.delayed:
+                delivery.delayed = True
+                # Log the delay in history
+                history = DeliveryHistory(
+                    delivery_id=delivery.id,
+                    status=delivery.status,
+                    changed_by=current_user_id,
+                    notes="Delivery marked as delayed due to past scheduled date"
+                )
+                db.session.add(history)
 
     clash = Delivery.query.filter(
         Delivery.id != delivery.id,
@@ -241,27 +353,86 @@ def update_delivery(delivery_id):
     if clash:
         return jsonify({"error": "Truck already booked for this time"}), 400
 
-    # Check if status is being updated to 'livrée' (delivered)
-    if 'status' in data and data['status'] == 'livrée':
+    # Handle status changes and update associated orders
+    if 'status' in data and data['status'] != delivery.status:
+        new_status = data['status']
+        old_status = delivery.status
+        
         # Get all orders associated with this delivery
         order_links = DeliveryOrder.query.filter_by(delivery_id=delivery.id).all()
-        for link in order_links:
-            order = Order.query.get(link.order_id)
-            if order:
-                order.status = 'Livrée'  # Update order status to 'Livrée'
-                db.session.add(order)
+        order_ids = [link.order_id for link in order_links]
+        
+        # Handle different status transitions
+        if new_status == 'livrée':
+            # When delivery is marked as delivered, update all associated orders to 'livrée'
+            for order_id in order_ids:
+                order = Order.query.get(order_id)
+                if order:
+                    order.status = 'livrée'
+                    db.session.add(order)
+        
+        elif new_status == 'annulée':
+            # When delivery is cancelled, check each order to see if it should be reverted to 'en attente'
+            for order_id in order_ids:
+                order = Order.query.get(order_id)
+                if order:
+                    # Check if this order has other active deliveries
+                    other_deliveries = db.session.query(Delivery).join(
+                        DeliveryOrder, Delivery.id == DeliveryOrder.delivery_id
+                    ).filter(
+                        DeliveryOrder.order_id == order_id,
+                        Delivery.id != delivery.id,
+                        ~Delivery.status.in_(['annulée', 'livrée'])
+                    ).count()
+                    
+                    # If no other active deliveries, revert to 'en attente'
+                    if other_deliveries == 0:
+                        order.status = 'en attente'
+                        db.session.add(order)
+        
+        elif new_status in ['programmé', 'en cours'] and old_status == 'annulée':
+            # When reactivating a cancelled delivery, update orders to 'planifié'
+            for order_id in order_ids:
+                order = Order.query.get(order_id)
+                if order and order.status == 'en attente':
+                    order.status = 'planifié'
+                    db.session.add(order)
         
         # Also handle the legacy single order_id if it exists
-        if delivery.order_id:
-            legacy_order = Order.query.get(delivery.order_id)
-            if legacy_order:
-                legacy_order.status = 'Livrée'
-                db.session.add(legacy_order)
+        if delivery.order_id and delivery.order_id not in order_ids:
+            order_ids.append(delivery.order_id)
+            
+            if new_status == 'livrée':
+                legacy_order = Order.query.get(delivery.order_id)
+                if legacy_order:
+                    legacy_order.status = 'livrée'
+                    db.session.add(legacy_order)
+            elif new_status == 'annulée':
+                # For legacy orders, just revert to 'en attente' when delivery is cancelled
+                legacy_order = Order.query.get(delivery.order_id)
+                if legacy_order:
+                    legacy_order.status = 'en attente'
+                    db.session.add(legacy_order)
 
     # 8) Commit
     try:
         db.session.commit()
-        return jsonify({"message": "Delivery updated"}), 200
+        
+        # Return the updated delivery with its history
+        delivery_data = {
+            'id': delivery.id,
+            'status': delivery.status,
+            'delayed': delivery.delayed,
+            'history': [{
+                'id': h.id,
+                'status': h.status,
+                'changed_at': h.changed_at.isoformat(),
+                'changed_by': h.user.username if h.user else None,
+                'notes': h.notes
+            } for h in delivery.history]
+        }
+        
+        return jsonify({"message": "Delivery updated", "delivery": delivery_data}), 200
     except Exception as e:
         db.session.rollback()
         logging.exception("Failed to update delivery")
@@ -281,10 +452,48 @@ def delete_delivery(delivery_id):
             delivery_uuid = uuid.UUID(delivery_id)
         except Exception:
             return jsonify({"message": "Invalid delivery ID format"}), 400
-        delivery = Delivery.query.get(delivery_uuid)
+            
+        # Get the delivery with its orders
+        delivery = Delivery.query.options(
+            db.joinedload(Delivery.orders)
+        ).get(delivery_uuid)
+        
         if not delivery:
             return jsonify({"message": "Delivery not found"}), 404
+        
+        # Get all order IDs associated with this delivery
+        order_links = DeliveryOrder.query.filter_by(delivery_id=delivery.id).all()
+        order_ids = [link.order_id for link in order_links]
+        
+        # Delete the delivery-order associations
         DeliveryOrder.query.filter_by(delivery_id=delivery.id).delete()
+        
+        # For each order, check if it should be reverted to 'en attente'
+        for order_id in order_ids:
+            order = Order.query.get(order_id)
+            if order:
+                # Check if this order has other active deliveries
+                other_deliveries = db.session.query(Delivery).join(
+                    DeliveryOrder, Delivery.id == DeliveryOrder.delivery_id
+                ).filter(
+                    DeliveryOrder.order_id == order_id,
+                    Delivery.id != delivery.id,
+                    ~Delivery.status.in_(['annulée', 'livrée'])
+                ).count()
+                
+                # If no other active deliveries, revert to 'en attente'
+                if other_deliveries == 0 and order.status != 'livrée':
+                    order.status = 'en attente'
+                    db.session.add(order)
+        
+        # Handle the legacy single order_id if it exists
+        if delivery.order_id and delivery.order_id not in order_ids:
+            legacy_order = Order.query.get(delivery.order_id)
+            if legacy_order and legacy_order.status != 'livrée':
+                legacy_order.status = 'en attente'
+                db.session.add(legacy_order)
+        
+        # Finally, delete the delivery
         db.session.delete(delivery)
         db.session.commit()
         logging.info(f"Delivery deleted with ID: {delivery.id}")

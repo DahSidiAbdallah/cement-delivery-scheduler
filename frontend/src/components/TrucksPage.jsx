@@ -82,20 +82,13 @@ export default function TrucksPage() {
     }
   };
 
-  const handleEditOpen = (order) => {
+  const handleEditOpen = (truck) => {
     setEditData({
-      client_id: order.client_id,
-      product_id: order.product_id,
-      quantity: order.quantity.toString(),
-      requested_date: order.requested_date,
-      requested_time: order.requested_time || '',
-      status: order.status || 'en attente'
+      plate_number: truck.plate_number,
+      capacity: truck.capacity.toString(),
+      driver_name: truck.driver_name || ''
     });
-    setEditId(order.id);
-  };
-  
-  const handleEdit = (order) => {
-    handleEditOpen(order);
+    setEditId(truck.id);
   };
   
   const handleEditChange = (field, value) => {
@@ -106,22 +99,28 @@ export default function TrucksPage() {
   };
 
   const handleEditSave = async () => {
-    if (!editData.plate_number.trim() || !editData.capacity || !editData.driver_name.trim()) {
+    if (!editData.plate_number?.trim() || !editData.capacity || !editData.driver_name?.trim()) {
       setSnackbar({ message: 'Tous les champs sont requis', severity: 'error' });
       return;
     }
     setIsSaving(true);
     try {
       await api.put(`/trucks/${editId}`, {
-        ...editData,
-        capacity: parseFloat(editData.capacity)
+        plate_number: editData.plate_number.trim(),
+        capacity: parseFloat(editData.capacity),
+        driver_name: editData.driver_name.trim()
       });
       setSnackbar({ message: 'Camion modifié', severity: 'success' });
       setEditId(null);
       await load();
     } catch (error) {
       console.error('Error updating truck:', error);
-      setSnackbar({ message: 'Erreur lors de la modification', severity: 'error' });
+      setSnackbar({ 
+        message: error.response?.data?.message || 'Erreur lors de la modification', 
+        severity: 'error' 
+      });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -257,7 +256,7 @@ export default function TrucksPage() {
             <TextField 
               label="Immatriculation" 
               value={editData.plate_number} 
-              onChange={e => setEditData({...editData, plate_number: e.target.value})} 
+              onChange={e => handleEditChange('plate_number', e.target.value)} 
               fullWidth 
               sx={{ mb: 2 }} 
               disabled={isSaving}
@@ -266,7 +265,7 @@ export default function TrucksPage() {
               label="Capacité (tonnes)" 
               type="number" 
               value={editData.capacity} 
-              onChange={e => setEditData({...editData, capacity: e.target.value})} 
+              onChange={e => handleEditChange('capacity', e.target.value)} 
               fullWidth 
               sx={{ mb: 2 }}
               inputProps={{ min: 0, step: 0.01 }}
@@ -275,7 +274,7 @@ export default function TrucksPage() {
             <TextField 
               label="Chauffeur" 
               value={editData.driver_name} 
-              onChange={e => setEditData({...editData, driver_name: e.target.value})} 
+              onChange={e => handleEditChange('driver_name', e.target.value)} 
               fullWidth
               disabled={isSaving}
             />
@@ -291,7 +290,7 @@ export default function TrucksPage() {
           <Button 
             onClick={handleEditSave} 
             variant="contained"
-            disabled={isSaving}
+            disabled={isSaving || !editData.plate_number?.trim() || !editData.capacity || !editData.driver_name?.trim()}
             startIcon={isSaving ? <CircularProgress size={20} color="inherit" /> : null}
           >
             {isSaving ? 'Enregistrement...' : 'Enregistrer'}

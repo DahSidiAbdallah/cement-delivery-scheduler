@@ -1,13 +1,14 @@
 // src/components/OrdersPage.jsx
 import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { AuthContext } from '../contexts/AuthContext';
+import styles from './OrdersPage.module.css';
 import {
   Box, TextField, Button, Paper,
   Typography, MenuItem, Select,
   Snackbar, Dialog, DialogTitle, DialogContent, 
   DialogActions, IconButton, CircularProgress, Alert,
   FormControl, InputLabel, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, Chip
+  TableContainer, TableHead, TableRow, Chip, Autocomplete
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -16,10 +17,11 @@ import api from '../services/api';
 import RefreshIcon from '@mui/icons-material/Refresh';
 
 const statusColors = {
-  'En attente': 'warning',
-  'Planifié': 'info',
-  'Livrée': 'success',
-  'Annulée': 'error'
+  'en attente': 'warning',
+  'planifié': 'info',
+  'livrée': 'success',
+  'annulé': 'error',
+  'annulée': 'error'
 };
 
 export default function OrdersPage() {
@@ -34,6 +36,7 @@ export default function OrdersPage() {
   const [snackbar, setSnackbar] = useState(null);
   
   // Form state
+  const [clientInput, setClientInput] = useState('');
   const [clientId, setClientId] = useState('');
   const [productId, setProductId] = useState('');
   const [quantity, setQuantity] = useState('');
@@ -44,6 +47,9 @@ export default function OrdersPage() {
   
   const [date, setDate] = useState(currentDate);
   const [time, setTime] = useState(currentTime);
+  
+  // Separate state for edit form client input
+  const [editClientInput, setEditClientInput] = useState('');
   
   // Dialog state
   const [deleteId, setDeleteId] = useState(null);
@@ -62,7 +68,7 @@ export default function OrdersPage() {
     try {
       const response = await api.get('/orders');
       // Filter out delivered orders from the list
-      const filteredOrders = response.data.filter(order => order.status !== 'Livrée');
+      const filteredOrders = response.data.filter(order => order.status !== 'livrée');
       setOrders(filteredOrders);
     } catch (error) {
       console.error('Error loading orders:', error);
@@ -109,6 +115,17 @@ export default function OrdersPage() {
     loadAllData();
   }, [loadAllData]);
 
+  // Filter clients based on search input
+  const filteredClients = React.useMemo(() => {
+    if (!clientInput) return clients;
+    const input = clientInput.toLowerCase();
+    return clients.filter(client => 
+      client.name.toLowerCase().includes(input) ||
+      (client.contact_info && client.contact_info.toLowerCase().includes(input)) ||
+      (client.address && client.address.toLowerCase().includes(input))
+    );
+  }, [clients, clientInput]);
+
   const handleAdd = async () => {
     if (!clientId || !productId || !quantity || !date) {
       setSnackbar({ 
@@ -117,6 +134,9 @@ export default function OrdersPage() {
       });
       return;
     }
+    
+    // Ensure the status is set to 'en attente' (lowercase)
+    const status = 'en attente';
     
     const parsedQuantity = parseFloat(quantity);
     if (isNaN(parsedQuantity) || parsedQuantity <= 0) {
@@ -135,6 +155,7 @@ export default function OrdersPage() {
         product_id: productId,
         quantity: parsedQuantity,
         requested_date: date,
+        status: status // Ensure status is included in the payload
       };
       
       // Only include time if it's provided and valid
@@ -256,6 +277,9 @@ export default function OrdersPage() {
       ? new Date(order.requested_date).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0];
     
+    // Normalize status to lowercase for consistency
+    const normalizedStatus = order.status ? order.status.toLowerCase() : 'en attente';
+    
     const editData = {
       ...initialEditData, // Reset to initial state first
       client_id: order.client_id || '',
@@ -263,10 +287,14 @@ export default function OrdersPage() {
       quantity: order.quantity ? order.quantity.toString() : '',
       requested_date: formattedDate,
       requested_time: order.requested_time ? order.requested_time.substring(0, 5) : '',
-      status: order.status || 'En attente'
+      status: normalizedStatus
     };
     
     setEditData(editData);
+    
+    // Set the client input for the edit form
+    const client = clients.find(c => c.id === order.client_id);
+    setEditClientInput(client ? client.name : '');
     
     // Log for debugging
     console.log('Edit data set:', editData);
@@ -280,6 +308,10 @@ export default function OrdersPage() {
       });
       return;
     }
+    
+    // Ensure status is set and lowercase
+    const status = editData.status ? editData.status.toLowerCase() : 'en attente';
+    
     
     const parsedQuantity = parseFloat(editData.quantity);
     if (isNaN(parsedQuantity) || parsedQuantity <= 0) {
@@ -301,13 +333,13 @@ export default function OrdersPage() {
     
     setIsSaving(true);
     try {
-      // Prepare the update payload
+      // Prepare the update payload with normalized status
       const updateData = {
         client_id: editData.client_id,
         product_id: editData.product_id,
         quantity: parsedQuantity,
         requested_date: editData.requested_date,
-        status: editData.status || 'En attente'
+        status: status // Use the normalized status
       };
       
       // Handle time formatting - ensure HH:MM format
@@ -380,89 +412,149 @@ export default function OrdersPage() {
 
 
   return (
-    <Box sx={{ p: 3 }}>
-      {!isViewer && (
-        <Paper sx={{ p: 2, mb: 2 }}>
-          <Typography variant="h6" sx={{ mb: 2 }}>Nouvelle Commande</Typography>
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-            <FormControl size="small" sx={{ minWidth: 200 }} disabled={isSaving}>
-              <InputLabel>Client *</InputLabel>
-              <Select
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                label="Client"
-              >
-                {clients.map(client => (
-                  <MenuItem key={client.id} value={client.id}>
-                    {client.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <FormControl size="small" sx={{ minWidth: 200 }} disabled={isSaving}>
-              <InputLabel>Produit *</InputLabel>
-              <Select
-                value={productId}
-                onChange={(e) => setProductId(e.target.value)}
-                label="Produit"
-              >
-                {products.map(product => (
-                  <MenuItem key={product.id} value={product.id}>
-                    {product.name}{product.type ? ` (${product.type})` : ''}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <TextField
-              label="Quantité (tonnes) *"
-              type="number"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              size="small"
-              sx={{ width: 150 }}
-              disabled={isSaving}
-              inputProps={{ min: 0, step: 0.01 }}
-            />
-
-            <TextField
-              label="Date de Commande *"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              InputLabelProps={{
-                shrink: true,
+    <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
+      <Paper sx={{ p: { xs: 1.5, sm: 2, md: 3 }, mb: 3 }} elevation={2}>
+        <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: 'primary.main' }}>Nouvelle Commande</Typography>
+        <Box className={styles.formGrid}>
+          <FormControl fullWidth size="small" className={styles.formField}>
+            <Autocomplete
+              options={filteredClients}
+              getOptionLabel={(option) => option.name || ''}
+              inputValue={clientInput}
+              onInputChange={(_, newInputValue) => {
+                setClientInput(newInputValue);
               }}
-              size="small"
-              disabled={isSaving}
-            />
-
-            <TextField
-              label="Heure de Commande"
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              InputLabelProps={{
-                shrink: true,
+              value={clients.find(c => c.id === clientId) || null}
+              onChange={(_, newValue) => {
+                setClientId(newValue ? newValue.id : '');
               }}
-              size="small"
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  size="small"
+                  label="Client *"
+                  required
+                  variant="outlined"
+                />
+              )}
+              renderOption={(props, option) => (
+                <li {...props}>
+                  <div>
+                    <div>{option.name}</div>
+                    {option.contact_info && (
+                      <Typography variant="body2" color="textSecondary">
+                        {option.contact_info}
+                      </Typography>
+                    )}
+                  </div>
+                </li>
+              )}
+              noOptionsText="Aucun client trouvé"
               disabled={isSaving}
             />
+          </FormControl>
 
-            <Button 
-              variant="contained" 
-              onClick={handleAdd}
-              disabled={!clientId || !productId || !quantity || !date || isSaving}
-              startIcon={isSaving ? <CircularProgress size={20} color="inherit" /> : <AddIcon />}
+          <FormControl fullWidth size="small" className={styles.formField} sx={{ mb: 2 }} disabled={isSaving}>
+            <InputLabel>Produit *</InputLabel>
+            <Select
+              value={productId}
+              onChange={(e) => setProductId(e.target.value)}
+              label="Produit"
             >
-              {isSaving ? 'Ajout...' : 'Ajouter'}
-            </Button>
-          </Box>
-        </Paper>
-      )}
+              {products.map(product => (
+                <MenuItem key={product.id} value={product.id}>
+                  {product.name}{product.type ? ` (${product.type})` : ''}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
 
-      <Paper sx={{ p: 2, overflow: 'auto' }} elevation={2}>
+          <TextField
+            className={styles.formField}
+            label="Quantité (tonnes) *"
+            type="number"
+            value={quantity}
+            onChange={(e) => setQuantity(e.target.value)}
+            size="small"
+            disabled={isSaving}
+            inputProps={{ min: 0, step: 0.01 }}
+            fullWidth
+          />
+
+          <TextField
+            className={styles.formField}
+            label="Date de Commande *"
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            InputLabelProps={{
+              shrink: true,
+            }}
+            size="small"
+            disabled={isSaving}
+            fullWidth
+          />
+
+          <TextField
+            className={styles.formField}
+            label="Heure de Commande"
+            type="time"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            InputLabelProps={{
+              shrink: true,
+            }}
+            size="small"
+            disabled={isSaving}
+            fullWidth
+          />
+
+          <Button 
+            variant="contained" 
+            size="small"
+            onClick={handleAdd}
+            disabled={!clientId || !productId || !quantity || !date || isSaving}
+            startIcon={isSaving ? <CircularProgress size={20} color="inherit" /> : <AddIcon />}
+            className={styles.submitButton}
+            sx={{
+              bgcolor: 'primary.main',
+              '&:hover': {
+                bgcolor: 'primary.dark',
+              },
+              alignSelf: 'flex-end',
+            }}
+          >
+            {isSaving ? 'Ajout...' : 'Ajouter'}
+          </Button>
+        </Box>
+      </Paper>
+
+      <Paper sx={{ 
+        p: { xs: 1.5, sm: 2, md: 3 }, 
+        mt: 3, 
+        overflow: 'auto',
+        '& .MuiTable-root': {
+          minWidth: 1000,
+          '@media (max-width: 900px)': {
+            minWidth: '100%',
+            display: 'block',
+            overflowX: 'auto',
+          }
+        },
+        '& .MuiTableCell-root': {
+          py: 1.5,
+          px: 2,
+        },
+        '& .MuiTableHead-root': {
+          '& .MuiTableCell-root': {
+            fontWeight: 600,
+            backgroundColor: 'grey.100',
+          }
+        },
+        '& .MuiTableRow-hover:hover': {
+          backgroundColor: 'action.hover',
+        }
+      }} elevation={2}>
         <TableContainer sx={{ maxHeight: 'calc(100vh - 300px)' }}>
           <Table stickyHeader size="small">
             <TableHead>
@@ -491,13 +583,21 @@ export default function OrdersPage() {
                       <TableCell>{order.requested_time ? order.requested_time.substring(0, 5) : '-'}</TableCell>
                       <TableCell>
                         <Chip 
-                          label={order.status}
-                          color={order.status === 'annulée' ? 'error' : 'warning'}
+                          label={order.status === 'en attente' ? 'En attente' : 
+                                 order.status === 'planifié' ? 'Planifié' :
+                                 order.status === 'livrée' ? 'Livrée' : 'Annulé'}
+                          color={statusColors[order.status] || 'default'}
                           size="small"
                           sx={{ 
                             textTransform: 'capitalize',
                             minWidth: 80,
-                            justifyContent: 'center'
+                            justifyContent: 'center',
+                            backgroundColor: statusColors[order.status] ? `${statusColors[order.status]}.light` : 'default',
+                            '& .MuiChip-label': {
+                              color: theme => theme.palette.getContrastText(
+                                theme.palette[statusColors[order.status]]?.main || '#ffffff'
+                              )
+                            }
                           }}
                         />
                       </TableCell>
@@ -584,22 +684,45 @@ export default function OrdersPage() {
         <DialogTitle>Modifier la commande</DialogTitle>
         <DialogContent>
           <Box sx={{ mt: 2 }}>
-            <FormControl fullWidth size="small" sx={{ mb: 2 }} disabled={isSaving}>
-              <InputLabel>Client *</InputLabel>
-              <Select
-                value={editData.client_id}
-                onChange={(e) => handleEditChange('client_id', e.target.value)}
-                label="Client"
-              >
-                {clients.map(client => (
-                  <MenuItem key={client.id} value={client.id}>
-                    {client.name}
-                  </MenuItem>
-                ))}
-              </Select>
+            <FormControl fullWidth size="small" className={styles.formField}>
+              <Autocomplete
+                options={clients}
+                getOptionLabel={(option) => option.name || ''}
+                inputValue={editClientInput}
+                onInputChange={(_, newInputValue) => {
+                  setEditClientInput(newInputValue);
+                }}
+                value={clients.find(c => c.id === editData.client_id) || null}
+                onChange={(_, newValue) => {
+                  handleEditChange('client_id', newValue ? newValue.id : '');
+                  setEditClientInput(newValue ? newValue.name : '');
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Client *"
+                    required
+                    variant="outlined"
+                  />
+                )}
+                renderOption={(props, option) => (
+                  <li {...props}>
+                    <div>
+                      <div>{option.name}</div>
+                      {option.contact_info && (
+                        <Typography variant="body2" color="textSecondary">
+                          {option.contact_info}
+                        </Typography>
+                      )}
+                    </div>
+                  </li>
+                )}
+                noOptionsText="Aucun client trouvé"
+                disabled={isSaving}
+              />
             </FormControl>
             
-            <FormControl fullWidth size="small" sx={{ mb: 2 }} disabled={isSaving}>
+            <FormControl fullWidth size="small" className={styles.formField} sx={{ mb: 2 }} disabled={isSaving}>
               <InputLabel>Produit *</InputLabel>
               <Select
                 value={editData.product_id}
@@ -654,17 +777,17 @@ export default function OrdersPage() {
               disabled={isSaving}
             />
             
-            <FormControl fullWidth size="small" sx={{ mb: 2 }} disabled={isSaving}>
+            <FormControl fullWidth size="small" className={styles.formField} sx={{ mb: 2 }} disabled={isSaving || editData.status === 'livrée'}>
               <InputLabel>Statut *</InputLabel>
               <Select
                 value={editData.status}
                 onChange={(e) => handleEditChange('status', e.target.value)}
                 label="Statut"
               >
-                <MenuItem value="En attente">En attente</MenuItem>
-                <MenuItem value="Planifié">Planifié</MenuItem>
-                <MenuItem value="Livrée">Livrée</MenuItem>
-                <MenuItem value="Annulée">Annulée</MenuItem>
+                <MenuItem value="en attente">En attente</MenuItem>
+                <MenuItem value="planifié">Planifié</MenuItem>
+                <MenuItem value="livrée" disabled>Livrée (géré automatiquement)</MenuItem>
+                <MenuItem value="annulé">Annulé</MenuItem>
               </Select>
             </FormControl>
           </Box>

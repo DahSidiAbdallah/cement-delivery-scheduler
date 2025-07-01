@@ -39,13 +39,18 @@ def create_order():
             except Exception:
                 return jsonify({"error": "Invalid time format, should be HH:MM"}), 400
 
+        # Ensure status is lowercase for consistency
+        status = data.get('status', 'en attente')
+        if status:
+            status = status.lower()
+            
         new_order = Order(
             client_id=client_id,
             product_id=product_id,
             quantity=data['quantity'],
             requested_date=data['requested_date'],
             requested_time=data.get('requested_time'),
-            status=data.get('status', 'En attente')
+            status=status
         )
         db.session.add(new_order)
         db.session.commit()
@@ -111,10 +116,31 @@ def update_order(order_id):
             except Exception:
                 return jsonify({"error": "Invalid time format, should be HH:MM"}), 400
 
+        # Get current status before update and ensure lowercase
+        old_status = order.status.lower() if order.status else 'en attente'
+        new_status = data.get('status', old_status)
+        if new_status:
+            new_status = new_status.lower()
+        
+        # Validate status transition
+        if old_status != new_status:
+            valid_transitions = {
+                'en attente': ['planifié', 'annulé'],
+                'planifié': ['en cours', 'livrée', 'annulé'],
+                'en cours': ['livrée', 'annulé'],
+                'livrée': [],  # Once delivered, no further changes allowed
+                'annulé': []   # Once cancelled, no further changes allowed
+            }
+            
+            if new_status not in valid_transitions.get(old_status, []):
+                return jsonify({"error": f"Invalid status transition from {old_status} to {new_status}"}), 400
+        
+        # Update order fields
         order.quantity = data.get('quantity', order.quantity)
         order.requested_date = data.get('requested_date', order.requested_date)
         order.requested_time = data.get('requested_time', order.requested_time)
-        order.status = data.get('status', order.status)
+        order.status = new_status
+        
         db.session.commit()
         logging.info(f"Order updated with ID: {order.id}")
         return jsonify({"message": "Order updated"}), 200

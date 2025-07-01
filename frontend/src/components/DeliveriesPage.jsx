@@ -5,13 +5,15 @@ import {
   TableHead, TableRow, IconButton, Snackbar, Dialog, DialogTitle, DialogContent, 
   DialogActions, CircularProgress, Alert, MenuItem, Select, InputLabel, FormControl, 
   Chip, TextField, TablePagination, TableSortLabel, Tooltip, DialogContentText, Divider,
-  FormHelperText, Avatar, Stack
+  FormHelperText, Avatar, Stack, List, ListItem, ListItemText, ListItemAvatar, Badge
 } from '@mui/material';
 import NotesIcon from '@mui/icons-material/Notes';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import AddIcon from '@mui/icons-material/Add';
+import HistoryIcon from '@mui/icons-material/History';
+import WarningIcon from '@mui/icons-material/Warning';
 import { DatePicker, LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { format, parseISO, isValid } from 'date-fns';
@@ -121,6 +123,8 @@ export default function DeliveriesPage() {
   });
   const [truckCapacity, setTruckCapacity] = useState({ used: 0, total: 0, exceeded: false });
   const [deleteConfirmation, setDeleteConfirmation] = useState({ open: false, id: null });
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [selectedDelivery, setSelectedDelivery] = useState(null);
   
   // Get user role from AuthContext
   const { role } = useContext(AuthContext);
@@ -128,7 +132,8 @@ export default function DeliveriesPage() {
 
   const loadDeliveries = useCallback(async () => {
     try {
-      const response = await api.get('/deliveries');
+      // Include history in the response
+      const response = await api.get('/deliveries?include_history=true');
       setDeliveries(response.data);
     } catch (error) {
       console.error('Error loading deliveries:', error);
@@ -138,11 +143,31 @@ export default function DeliveriesPage() {
 
   const loadOrders = useCallback(async () => {
     try {
-      const response = await api.get('/orders?status=validée');
-      setDependencies(prev => ({ ...prev, orders: response.data }));
+      // Show loading state
+      setLoadingError(null);
+      
+      // Fetch both 'en attente' and 'validée' orders
+      const [pendingResponse, validatedResponse] = await Promise.all([
+        api.get('/orders?status=en attente').catch(() => ({ data: [] })),
+        api.get('/orders?status=validée').catch(() => ({ data: [] }))
+      ]);
+      
+      // Combine both sets of orders
+      const allOrders = [...(pendingResponse?.data || []), ...(validatedResponse?.data || [])];
+      
+      if (allOrders.length === 0) {
+        setLoadingError('Aucune commande disponible pour le moment');
+      }
+      
+      // Remove duplicates by order ID in case any order appears in both responses
+      const uniqueOrders = Array.from(new Map(allOrders.map(order => [order.id, order])).values());
+      
+      setDependencies(prev => ({ ...prev, orders: uniqueOrders }));
     } catch (error) {
       console.error('Error loading orders:', error);
-      setLoadingError('Erreur lors du chargement des commandes');
+      const errorMessage = error.response?.data?.message || 'Erreur lors du chargement des commandes';
+      setLoadingError(errorMessage);
+      setSnackbar({ message: errorMessage, severity: 'error' });
     }
   }, []);
 
@@ -499,13 +524,29 @@ export default function DeliveriesPage() {
     }
   }, [dependencies.orders]);
 
+  const validateTimeFormat = (time) => {
+    if (!time) return true; // Empty is allowed
+    return /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(time);
+  };
+
   const handleSave = async () => {
     try {
       // Basic validation
       if (!form.order_ids || form.order_ids.length === 0) {
         setSnackbar({ 
           message: 'Veuillez sélectionner au moins une commande', 
-          severity: 'warning' 
+          severity: 'warning',
+          autoHideDuration: 5000
+        });
+        return;
+      }
+      
+      // Validate time format
+      if (form.scheduled_time && !validateTimeFormat(form.scheduled_time)) {
+        setSnackbar({
+          message: 'Format d\'heure invalide. Utilisez HH:MM (ex: 14:30)',
+          severity: 'error',
+          autoHideDuration: 5000
         });
         return;
       }
@@ -754,15 +795,25 @@ export default function DeliveriesPage() {
       const client = dependencies.clients?.find(c => c && c.id === order.client_id);
       const product = dependencies.products?.find(p => p && p.id === order.product_id);
       
-      // Format the order date
+      // Format the order date and time
       const orderDate = order.requested_date ? new Date(order.requested_date) : null;
       const formattedDate = orderDate ? format(orderDate, 'dd/MM/yyyy', { locale: fr }) : 'Date inconnue';
+      const formattedTime = order.requested_time ? order.requested_time.slice(0, 5) : ''; // Format as HH:MM
       
-      // Format the order details with date
-      return `${client?.name || 'Client inconnu'} (${order.quantity || 0}t - ${product?.name || 'Produit inconnu'}${product?.type ? ` - ${product.type}` : ''}) - ${formattedDate}`;
+      // Format the order details with date and time
+      const details = [
+        client?.name || 'Client inconnu',
+        `${order.quantity || 0}T`,
+        product?.name ? `de ${product.name}` : '',
+        product?.type ? `(${product.type})` : '',
+        `- ${formattedDate}`,
+        formattedTime ? `à ${formattedTime}` : ''
+      ].filter(Boolean).join(' ');
+      
+      return details;
     } catch (error) {
       console.error('Error in getOrderDetails:', error);
-      return `Commande ${orderId} (erreur)`;
+      return `Commande ${orderId} (erreur d'affichage)`;
     }
   };
   
@@ -814,6 +865,7 @@ export default function DeliveriesPage() {
                 <TableCell>Destination</TableCell>
                 <TableCell>Notes</TableCell>
                 <TableCell>Statut</TableCell>
+                <TableCell>Retard</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -865,15 +917,47 @@ export default function DeliveriesPage() {
                         color={statusColors[delivery.status] || 'default'}
                       />
                     </TableCell>
+                    <TableCell>
+                      {delivery.delayed && (
+                        <Chip 
+                          icon={<WarningIcon />}
+                          label="En retard"
+                          color="warning"
+                          size="small"
+                          variant="outlined"
+                        />
+                      )}
+                    </TableCell>
                     <TableCell align="right">
-                      <IconButton onClick={() => handleOpenDialog(delivery)} disabled={isSaving || isDeleting}><EditIcon /></IconButton>
-                      <IconButton onClick={() => handleDelete(delivery.id)} disabled={isSaving || isDeleting}><DeleteIcon /></IconButton>
+                      <Tooltip title="Voir l'historique">
+                        <IconButton 
+                          onClick={() => {
+                            setSelectedDelivery(delivery);
+                            setHistoryDialogOpen(true);
+                          }}
+                          disabled={isSaving || isDeleting}
+                        >
+                          <HistoryIcon />
+                        </IconButton>
+                      </Tooltip>
+                      <IconButton 
+                        onClick={() => handleOpenDialog(delivery)} 
+                        disabled={isSaving || isDeleting}
+                      >
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton 
+                        onClick={() => handleDelete(delivery.id)} 
+                        disabled={isSaving || isDeleting}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
                     </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
+                  <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
                     <Typography color="textSecondary">Aucune livraison trouvée. Commencez par en ajouter une.</Typography>
                   </TableCell>
                 </TableRow>
@@ -883,166 +967,226 @@ export default function DeliveriesPage() {
         </TableContainer>
       </Paper>
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>{editDelivery ? 'Modifier la livraison' : 'Ajouter une livraison'}</DialogTitle>
+      <Dialog 
+        open={historyDialogOpen} 
+        onClose={() => setHistoryDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Historique de la livraison</DialogTitle>
         <DialogContent>
-          <FormControl fullWidth margin="normal" error={truckCapacity.exceeded}>
-            <InputLabel>Commandes *</InputLabel>
-            <Select
-              multiple
-              value={form.order_ids || []}
-              onChange={handleOrderSelect}
-              label="Commandes *"
-              renderValue={(selected) => `${selected.length} commande(s) sélectionnée(s)`}
-              required
-            >
-              {truckCapacity.total > 0 && (
-                <Box sx={{ p: 1, bgcolor: truckCapacity.exceeded ? '#ffebee' : '#e8f5e9', borderRadius: 1, m: 1 }}>
-                  <Typography variant="caption" color={truckCapacity.exceeded ? 'error' : 'textSecondary'}>
-                    Capacité: {truckCapacity.used.toFixed(1)}T / {truckCapacity.total.toFixed(1)}T
-                    {truckCapacity.exceeded && ' (Dépassement de capacité!)'}
-                  </Typography>
-                </Box>
-              )}
-              {dependencies.orders.map(order => (
-                <MenuItem key={order.id} value={order.id}>{getOrderDetails(order.id)}</MenuItem>
+          {selectedDelivery && selectedDelivery.history && selectedDelivery.history.length > 0 ? (
+            <List>
+              {selectedDelivery.history.map((record, index) => (
+                <React.Fragment key={record.id}>
+                  <ListItem alignItems="flex-start">
+                    <ListItemAvatar>
+                      <Avatar>
+                        {record.changed_by ? record.changed_by.charAt(0).toUpperCase() : 'S'}
+                      </Avatar>
+                    </ListItemAvatar>
+                    <ListItemText
+                      primary={
+                        <>
+                          <Chip 
+                            label={record.status} 
+                            size="small" 
+                            color={statusColors[record.status] || 'default'}
+                            sx={{ mr: 1 }}
+                          />
+                          <Typography component="span" variant="caption" color="textSecondary">
+                            {new Date(record.changed_at).toLocaleString('fr-FR', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </Typography>
+                        </>
+                      }
+                      secondary={
+                        <>
+                          <Typography component="span" variant="body2" color="text.primary">
+                            {record.changed_by || 'Système'}
+                          </Typography>
+                          {record.notes && ` — ${record.notes}`}
+                        </>
+                      }
+                    />
+                  </ListItem>
+                  {index < selectedDelivery.history.length - 1 && <Divider variant="inset" component="li" />}
+                </React.Fragment>
               ))}
-            </Select>
-          </FormControl>
-          <FormControl fullWidth margin="normal" error={truckCapacity.exceeded}>
-            <InputLabel>Camion *</InputLabel>
-            <Select
-              value={form.truck_id || ''}
-              onChange={(e) => handleEditChange('truck_id', e.target.value)}
-              label="Camion *"
-              required
-            >
-              {dependencies.trucks && dependencies.trucks.map((truck) => {
-                const truckCapacity = parseFloat(truck.capacity);
-                const capacityText = !isNaN(truckCapacity) ? ` (Capacité: ${truckCapacity}T)` : '';
-                return (
-                  <MenuItem key={truck.id} value={truck.id}>
-                    {truck.plate_number} {truck.driver_name ? `(${truck.driver_name})` : ''}{capacityText}
+            </List>
+          ) : (
+            <Typography variant="body1" color="textSecondary" align="center" sx={{ py: 2 }}>
+              Aucun historique disponible pour cette livraison.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setHistoryDialogOpen(false)}>Fermer</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delivery Form Dialog */}
+      <Dialog 
+        open={dialogOpen} 
+        onClose={() => setDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>{editDelivery ? 'Modifier la livraison' : 'Nouvelle livraison'}</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <FormControl fullWidth margin="normal">
+              <InputLabel id="order-select-label">Commandes</InputLabel>
+              <Select
+                labelId="order-select-label"
+                id="order-select"
+                multiple
+                value={form.order_ids || []}
+                onChange={handleOrderSelect}
+                label="Commandes"
+                disabled={isViewer}
+              >
+                {dependencies.orders?.filter(order => order.status === 'en attente' || order.status === 'validée').map((order) => (
+                  <MenuItem key={order.id} value={order.id}>
+                    {order.client?.name} - {order.quantity}t de {order.product?.name}
                   </MenuItem>
-                );
-              })}
-            </Select>
-            {truckCapacity.exceeded && (
-              <FormHelperText error>
-                {`Capacité dépassée: ${truckCapacity.used.toFixed(2)}T > ${truckCapacity.total.toFixed(2)}T`}
-              </FormHelperText>
-            )}
-            {form.truck_id && !truckCapacity.exceeded && truckCapacity.total > 0 && (
-              <FormHelperText>
-                {`Capacité utilisée: ${truckCapacity.used.toFixed(2)}T / ${truckCapacity.total.toFixed(2)}T`}
-              </FormHelperText>
-            )}
-          </FormControl>
-          <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
-            <Box display="flex" gap={2} mb={2}>
+                ))}
+              </Select>
+            </FormControl>
+
+            <FormControl fullWidth margin="normal">
+              <InputLabel id="truck-select-label">Camion</InputLabel>
+              <Select
+                labelId="truck-select-label"
+                id="truck-select"
+                value={form.truck_id || ''}
+                onChange={(e) => handleEditChange('truck_id', e.target.value)}
+                label="Camion"
+                disabled={isViewer}
+              >
+                <MenuItem value="">
+                  <em>Sélectionner un camion</em>
+                </MenuItem>
+                {dependencies.trucks?.map((truck) => (
+                  <MenuItem key={truck.id} value={truck.id}>
+                    {truck.plate_number} - {truck.driver_name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
               <DatePicker
                 label="Date de livraison"
                 value={form.scheduled_date}
-                onChange={(date) => setForm({ ...form, scheduled_date: date })}
+                onChange={(newValue) => handleEditChange('scheduled_date', newValue)}
                 renderInput={(params) => (
-                  <TextField 
-                    {...params} 
-                    fullWidth 
-                    margin="normal" 
-                    disabled={isSaving} 
-                    required
-                  />
+                  <TextField {...params} fullWidth margin="normal" />
                 )}
+                minDate={new Date()}
+                disabled={isViewer}
               />
-              <TextField
-                label="Heure (HH:MM)"
-                type="time"
-                value={form.scheduled_time || ''}
-                onChange={(e) => {
-                  // Ensure consistent time format (HH:MM)
-                  const timeValue = e.target.value;
-                  if (timeValue) {
-                    const [hours, minutes] = timeValue.split(':');
-                    const formattedTime = `${hours.padStart(2, '0')}:${minutes}`;
-                    setForm({ ...form, scheduled_time: formattedTime });
-                  } else {
-                    setForm({ ...form, scheduled_time: '' });
+            </LocalizationProvider>
+
+            <TextField
+              label="Heure de livraison"
+              fullWidth
+              margin="normal"
+              type="time"
+              value={form.scheduled_time || ''}
+              onChange={(e) => {
+                // Format the time to HH:MM
+                let timeValue = e.target.value;
+                if (timeValue && timeValue.length === 5) {
+                  // Ensure proper formatting
+                  const [hours, minutes] = timeValue.split(':');
+                  if (hours && minutes) {
+                    timeValue = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
                   }
-                }}
-                fullWidth
-                margin="normal"
-                disabled={isSaving}
-                InputLabelProps={{
-                  shrink: true,
-                }}
-                inputProps={{
-                  step: 300, // 5 min
-                }}
-                placeholder="HH:MM"
-              />
-            </Box>
-          </LocalizationProvider>
-          <FormControl fullWidth margin="normal">
-            <InputLabel id="status-select-label">Statut</InputLabel>
-            <Select
-              labelId="status-select-label"
-              value={form.status}
-              onChange={(e) => setForm({ ...form, status: e.target.value })}
-              label="Statut"
-              disabled={isSaving}
+                }
+                handleEditChange('scheduled_time', timeValue);
+              }}
+              InputLabelProps={{
+                shrink: true,
+              }}
+              inputProps={{
+                step: 300, // 5 min
+              }}
+              disabled={isViewer}
+              error={!!form.scheduled_time && !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(form.scheduled_time)}
+              helperText={form.scheduled_time && !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(form.scheduled_time) 
+                ? 'Format invalide. Utilisez HH:MM (ex: 14:30)' 
+                : ''}
+            />
+
+            <TextField
+              label="Destination"
+              fullWidth
+              margin="normal"
+              value={form.destination}
+              onChange={(e) => handleEditChange('destination', e.target.value)}
+              disabled={isViewer}
+              required
+            />
+
+            <TextField
+              label="Notes"
+              fullWidth
+              margin="normal"
+              value={form.notes}
+              onChange={(e) => handleEditChange('notes', e.target.value)}
+              multiline
+              rows={3}
+              disabled={isViewer}
+            />
+
+            <FormControl fullWidth margin="normal">
+              <InputLabel id="status-select-label">Statut</InputLabel>
+              <Select
+                labelId="status-select-label"
+                id="status-select"
+                value={form.status || 'en attente'}
+                onChange={(e) => handleEditChange('status', e.target.value)}
+                label="Statut"
+                disabled={isViewer}
+              >
+                <MenuItem value="en attente">En attente</MenuItem>
+                <MenuItem value="programmé">Programmé</MenuItem>
+                <MenuItem value="en cours">En cours</MenuItem>
+                <MenuItem value="livrée">Livrée</MenuItem>
+                <MenuItem value="annulée">Annulée</MenuItem>
+              </Select>
+            </FormControl>
+
+            {truckCapacity.total > 0 && (
+              <Box mt={2}>
+                <Typography variant="body2" color={truckCapacity.exceeded ? 'error' : 'textSecondary'}>
+                  Capacité du camion: {truckCapacity.used.toFixed(1)}T / {truckCapacity.total.toFixed(1)}T
+                  {truckCapacity.exceeded && ' (Capacité dépassée!)'}
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDialogOpen(false)}>Annuler</Button>
+          {!isViewer && (
+            <Button 
+              onClick={handleSave} 
+              variant="contained" 
+              color="primary"
+              disabled={isSaving || (truckCapacity.exceeded && form.status !== 'annulée')}
             >
-              {Object.keys(statusColors).map(status => (
-                <MenuItem key={status} value={status}>{status}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <TextField
-            label="Destination"
-            value={form.destination || ''}
-            onChange={(e) => setForm({ ...form, destination: e.target.value })}
-            fullWidth
-            margin="normal"
-            required
-            disabled={isSaving}
-          />
-          <TextField
-            label="Notes"
-            value={form.notes || ''}
-            onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            fullWidth
-            margin="normal"
-            multiline
-            rows={3}
-            disabled={isSaving}
-            placeholder="Ajoutez des notes ou des instructions pour cette livraison"
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDialogOpen(false)} disabled={isSaving}>Annuler</Button>
-          <Button onClick={handleSave} variant="contained" disabled={isSaving}>
-            {isSaving ? <CircularProgress size={24} /> : 'Sauvegarder'}
-          </Button>
+              {isSaving ? <CircularProgress size={24} /> : 'Enregistrer'}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
-
-      <Dialog open={deleteConfirmation.open} onClose={() => setDeleteConfirmation({ open: false, id: null })}>
-        <DialogTitle>Confirmer la suppression</DialogTitle>
-        <DialogContent>
-          <Typography>Êtes-vous sûr de vouloir supprimer cette livraison ? Cette action est irréversible.</Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteConfirmation({ open: false, id: null })} disabled={isDeleting}>Annuler</Button>
-          <Button onClick={handleDeleteConfirm} color="error" variant="contained" disabled={isDeleting}>
-            {isDeleting ? <CircularProgress size={24} /> : 'Supprimer'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Snackbar open={!!snackbar} autoHideDuration={6000} onClose={() => setSnackbar(null)}>
-        <Alert onClose={() => setSnackbar(null)} severity={snackbar?.severity || 'info'} sx={{ width: '100%' }}>
-          {snackbar?.message}
-        </Alert>
-      </Snackbar>
     </Box>
   );
 }
