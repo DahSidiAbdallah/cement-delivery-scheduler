@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, current_app, send_file
 from flask_jwt_extended import jwt_required
-from app.models import Order, Truck
+from app.models import Order, Truck, Delivery
 from app.utils.scheduler import optimize_schedule
 import io, pandas as pd
 
@@ -10,52 +10,71 @@ bp.strict_slashes = False
 @bp.route('/deliveries', methods=['GET'])
 @jwt_required()
 def get_schedule():
-    # Get all pending orders
-    pending_orders = Order.query.filter_by(status='Pending').all()
+    """Return the current delivery schedule.
+
+    Instead of computing a new schedule from pending orders, this endpoint now
+    aggregates existing deliveries that are already planned (``programmé`` or
+    ``en cours``). It also reports how many orders are still ``en attente`` so
+    the frontend can notify the user.
+    """
+
+    active_statuses = ['programmé', 'en cours', 'Programmé', 'En cours']
+
+    # All trucks (to keep empty ones in the result)
     trucks = Truck.query.all()
-    from app.models import Client
 
-    # Calculate total pending quantity
-    total_pending = sum(o.quantity for o in pending_orders)
-    total_capacity = sum(t.capacity for t in trucks)
+    # Deliveries that are currently planned
+    deliveries = Delivery.query.filter(Delivery.status.in_(active_statuses)).all()
+
+    # Map truck_id -> schedule item
+    schedule_map = {
+        t.id: {'truck': str(t.id), 'orders': [], 'load': 0}
+        for t in trucks
+    }
+
+    scheduled_order_ids = set()
+    scheduled_quantity = 0.0
+
+    for d in deliveries:
+        entry = schedule_map.get(d.truck_id)
+        if not entry:
+            # Skip deliveries without a valid truck
+            continue
+
+        # Collect orders associated with this delivery
+        linked_orders = list(d.orders)
+        if d.order_id:
+            legacy = Order.query.get(d.order_id)
+            if legacy:
+                linked_orders.append(legacy)
+
+        for order in linked_orders:
+            entry['orders'].append(str(order.id))
+            scheduled_order_ids.add(order.id)
+            scheduled_quantity += order.quantity
+
+    # Convert schedule map to list (keep truck order from DB)
+    schedule = list(schedule_map.values())
+
+    # Orders that are not yet planned
+    pending_orders = Order.query.filter_by(status='en attente').all()
+    pending_quantity = sum(o.quantity for o in pending_orders)
+
     daily_limit = current_app.config.get('DAILY_PRODUCTION_LIMIT', 800)
+    total_capacity = sum(t.capacity for t in trucks)
 
-    # Prepare data for optimization
-    orders_data = []
-    for o in pending_orders:
-        client = Client.query.get(o.client_id)
-        orders_data.append({
-            'id': str(o.id),
-            'quantity': o.quantity,
-            'priority': client.priority_level if client else 1
-        })
+    stats = {
+        'total_pending_orders': len(scheduled_order_ids) + len(pending_orders),
+        'total_pending_quantity': scheduled_quantity + pending_quantity,
+        'total_trucks': len(trucks),
+        'total_capacity': total_capacity,
+        'daily_limit': daily_limit,
+        'scheduled_orders': len(scheduled_order_ids),
+        'scheduled_quantity': scheduled_quantity,
+        'trucks_utilized': len([s for s in schedule if s['orders']])
+    }
 
-    trucks_data = [{
-        'id': str(t.id),
-        'plate_number': t.plate_number,
-        'capacity': t.capacity
-    } for t in trucks]
-
-    # Run optimization
-    result = optimize_schedule(orders_data, trucks_data, daily_limit)
-
-    # Calculate some stats
-    scheduled_orders = sum(len(t['orders']) for t in result)
-    scheduled_quantity = sum(t['load'] for t in result)
-
-    return jsonify({
-        'schedule': result,
-        'stats': {
-            'total_pending_orders': len(pending_orders),
-            'total_pending_quantity': total_pending,
-            'total_trucks': len(trucks),
-            'total_capacity': total_capacity,
-            'daily_limit': daily_limit,
-            'scheduled_orders': scheduled_orders,
-            'scheduled_quantity': scheduled_quantity,
-            'trucks_utilized': len([t for t in result if t['orders']])
-        }
-    }), 200
+    return jsonify({'schedule': schedule, 'stats': stats}), 200
 
 
 @bp.route('/export', methods=['GET'])
