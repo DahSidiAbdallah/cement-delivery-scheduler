@@ -2,9 +2,10 @@ import logging
 import uuid
 from flask import Blueprint, request, jsonify
 from app.models import db, Delivery, DeliveryHistory, DeliveryOrder, Order, Truck, User
+from app.extensions import db
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime, timedelta
-from sqlalchemy import desc, func, text
+from sqlalchemy import desc, func
 
 # Status strings used for cancelled deliveries (masculine/feminine forms)
 CANCELLED_STATUSES = ['annulée', 'annulé']
@@ -96,29 +97,14 @@ def create_delivery():
 
         # 4. Respect truck capacity
         truck = Truck.query.get(data['truck_id'])
-        if truck and truck.capacity is not None:  # Only check if truck has a defined capacity
-            total_qty = 0
-            for oid in order_ids:
-                # Use the quantity from order_quantities if provided, otherwise use the full order quantity
-                qty = data.get('order_quantities', {}).get(str(oid))
-                if qty is None:
-                    order = Order.query.get(oid)
-                    if not order:
-                        return jsonify({"error": f"Order {oid} not found"}), 400
-                    qty = order.quantity
-                else:
-                    try:
-                        qty = float(qty)
-                    except (ValueError, TypeError):
-                        return jsonify({"error": f"Invalid quantity for order {oid}"}), 400
-                
-                total_qty += qty
-            
-            if total_qty > truck.capacity:
-                return jsonify({
-                    "error": "Truck capacity exceeded",
-                    "details": f"Total quantity ({total_qty}) exceeds truck capacity ({truck.capacity})"
-                }), 400
+        total_qty = 0
+        for oid in order_ids:
+            order = Order.query.get(oid)
+            if not order:
+                return jsonify({"error": f"Order {oid} not found"}), 400
+            total_qty += order.quantity
+        if truck and truck.capacity and total_qty > truck.capacity:
+            return jsonify({"error": "Truck capacity exceeded"}), 400
 
         # Get the current user ID for history tracking
         current_user_id = get_jwt_identity()
@@ -592,85 +578,68 @@ def update_delivery(delivery_id):
 def delete_delivery(delivery_id):
     if request.method == 'OPTIONS':
         return '', 200
-    
-    session = db.session()
     try:
         logging.debug(f"Request headers: {dict(request.headers)}")
         identity = get_jwt_identity()
         logging.debug(f"JWT identity: {identity}")
-        
         try:
-            # Convert the delivery_id to UUID object
             delivery_uuid = uuid.UUID(delivery_id)
-        except (ValueError, AttributeError) as e:
-            logging.error(f"Invalid delivery ID format: {delivery_id}")
+        except Exception:
             return jsonify({"message": "Invalid delivery ID format"}), 400
+            
+        # Get the delivery with its orders
+        delivery = Delivery.query.options(
+            db.joinedload(Delivery.orders)
+        ).get(delivery_uuid)
         
-        # Start a transaction
-        session.begin()
+        if not delivery:
+            return jsonify({"message": "Delivery not found"}), 404
         
-        try:
-            # Get the delivery with its orders and related data
-            delivery = session.query(Delivery).get(delivery_uuid)
-            
-            if not delivery:
-                session.rollback()
-                return jsonify({"message": "Delivery not found"}), 404
-            
-            # Get all order links and their IDs
-            order_links = list(delivery.order_links)  # Make a copy of the list
-            order_ids = [link.order_id for link in order_links]  # Keep as UUID objects
-            
-            # Roll back quantities if needed
-            for link in order_links:
-                if link.quantity_deducted:
-                    # Use filter_by with the UUID object directly
-                    order = session.query(Order).filter_by(id=link.order_id).first()
-                    if order:
-                        order.quantity += link.quantity
-                        session.add(order)
-            
-            # For each order, check if it should be reverted to 'en attente'
-            for order_id in order_ids:
-                # Use filter_by with the UUID object directly
-                order = session.query(Order).filter_by(id=order_id).first()
+        # Get all order IDs associated with this delivery
+        order_links = DeliveryOrder.query.filter_by(delivery_id=delivery.id).all()
+        order_ids = [link.order_id for link in order_links]
+
+        # Roll back quantities if needed
+        for link in order_links:
+            if link.quantity_deducted:
+                order = Order.query.get(link.order_id)
                 if order:
-                    # Check if this order has other active deliveries
-                    other_deliveries = session.query(Delivery).join(
-                        DeliveryOrder, Delivery.id == DeliveryOrder.delivery_id
-                    ).filter(
-                        DeliveryOrder.order_id == order_id,
-                        Delivery.id != delivery.id,
-                        ~func.lower(Delivery.status).in_(CANCELLED_STATUSES + ['livrée'])
-                    ).count()
-                    
-                    # If no other active deliveries, revert to 'en attente'
-                    if other_deliveries == 0 and (order.status or '').lower() not in ['livrée', 'annulée', 'annulé']:
-                        order.status = 'en attente'
-                        session.add(order)
-            
-            # Handle the legacy single order_id if it exists
-            if delivery.order_id and delivery.order_id not in order_ids:
-                legacy_order = session.query(Order).filter_by(id=delivery.order_id).first()
-                if legacy_order and (legacy_order.status or '').lower() not in ['livrée', 'annulée', 'annulé']:
-                    legacy_order.status = 'en attente'
-                    session.add(legacy_order)
-            
-            # Delete the delivery (this should cascade to delivery_orders and delivery_history)
-            session.delete(delivery)
-            
-            # Commit all changes
-            session.commit()
-            logging.info(f"Delivery deleted with ID: {delivery_id}")
-            return jsonify({"message": "Delivery deleted"}), 200
-            
-        except Exception as e:
-            session.rollback()
-            logging.exception(f"Error in delete transaction for delivery {delivery_id}")
-            raise
-            
+                    order.quantity += link.quantity
+                    db.session.add(order)
+
+        # Delete the delivery-order associations
+        DeliveryOrder.query.filter_by(delivery_id=delivery.id).delete()
+        
+        # For each order, check if it should be reverted to 'en attente'
+        for order_id in order_ids:
+            order = Order.query.get(order_id)
+            if order:
+                # Check if this order has other active deliveries
+                other_deliveries = db.session.query(Delivery).join(
+                    DeliveryOrder, Delivery.id == DeliveryOrder.delivery_id
+                ).filter(
+                    DeliveryOrder.order_id == order_id,
+                    Delivery.id != delivery.id,
+                    ~func.lower(Delivery.status).in_(CANCELLED_STATUSES + ['livrée'])
+                ).count()
+                
+                # If no other active deliveries, revert to 'en attente'
+                if other_deliveries == 0 and (order.status or '').lower() != 'livrée':
+                    order.status = 'en attente'
+                    db.session.add(order)
+        
+        # Handle the legacy single order_id if it exists
+        if delivery.order_id and delivery.order_id not in order_ids:
+            legacy_order = Order.query.get(delivery.order_id)
+            if legacy_order and (legacy_order.status or '').lower() != 'livrée':
+                legacy_order.status = 'en attente'
+                db.session.add(legacy_order)
+        
+        # Finally, delete the delivery
+        db.session.delete(delivery)
+        db.session.commit()
+        logging.info(f"Delivery deleted with ID: {delivery.id}")
+        return jsonify({"message": "Delivery deleted"}), 200
     except Exception as e:
-        logging.exception(f"Exception occurred while deleting delivery {delivery_id}")
+        logging.exception("Exception occurred while deleting delivery")
         return jsonify({"error": "Server error", "details": str(e)}), 500
-    finally:
-        session.close()
