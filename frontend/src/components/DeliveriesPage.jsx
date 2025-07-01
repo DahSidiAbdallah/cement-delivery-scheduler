@@ -191,6 +191,8 @@ export default function DeliveriesPage() {
   const [form, setForm] = useState({
     order_ids: [],
     truck_id: '',
+    is_external: false,
+    external_truck_label: '',
     scheduled_date: new Date(),
     scheduled_time: '',
     status: 'programmé',
@@ -201,6 +203,7 @@ export default function DeliveriesPage() {
   const [formErrors, setFormErrors] = useState({
     order_ids: '',
     truck_id: '',
+    external_truck_label: '',
     scheduled_date: '',
     scheduled_time: '',
     destination: ''
@@ -378,10 +381,15 @@ export default function DeliveriesPage() {
         
         // Convert truck_id to string if it exists, or use empty string
         const truckId = delivery.truck_id ? String(delivery.truck_id) : '';
-        
+
+        const isExternal = delivery.is_external;
+        const externalLabel = delivery.external_truck_label || '';
+
         setForm({
           order_ids: orderIds,
           truck_id: truckId,
+          is_external: isExternal,
+          external_truck_label: externalLabel,
           scheduled_date: scheduledDate,
           scheduled_time: delivery.scheduled_time || '',
           status: delivery.status || 'programmé',
@@ -399,6 +407,8 @@ export default function DeliveriesPage() {
         setForm({
           order_ids: [],
           truck_id: '',
+          is_external: false,
+          external_truck_label: '',
           scheduled_date: new Date(),
           scheduled_time: '',
           status: 'programmé',
@@ -414,6 +424,8 @@ export default function DeliveriesPage() {
       setForm({
         order_ids: [],
         truck_id: '',
+        is_external: false,
+        external_truck_label: '',
         scheduled_date: new Date(),
         scheduled_time: '',
         status: 'programmé'
@@ -548,8 +560,12 @@ export default function DeliveriesPage() {
     }
     
     // Validate truck
-    if (!form.truck_id) {
+    if (!form.is_external && !form.truck_id) {
       errors.truck_id = 'Veuillez sélectionner un camion';
+      isValid = false;
+    }
+    if (form.is_external && (!form.external_truck_label || form.external_truck_label.trim() === '')) {
+      errors.truck_id = 'Veuillez préciser le camion externe';
       isValid = false;
     }
     
@@ -713,8 +729,8 @@ export default function DeliveriesPage() {
         }
       }
 
-      // Check truck capacity
-      if (form.truck_id && form.order_ids?.length > 0) {
+      // Check truck capacity for internal trucks
+      if (!form.is_external && form.truck_id && form.order_ids?.length > 0) {
         const isExceeded = await checkTruckCapacity(form.truck_id, form.order_ids);
         if (isExceeded) {
           setSnackbar({ 
@@ -758,6 +774,12 @@ export default function DeliveriesPage() {
         notes: form.notes || ''
       };
 
+      if (form.is_external) {
+        payload.is_external = true;
+        payload.external_truck_label = form.external_truck_label || '';
+        payload.truck_id = null;
+      }
+
       if (orderIds.length > 0) {
         payload.order_quantities = {};
         orderIds.forEach(id => {
@@ -767,11 +789,12 @@ export default function DeliveriesPage() {
       
       // Handle truck_id - always include it in the payload when updating
       // Convert empty string to null for the backend
-      if (editDelivery) {
-        payload.truck_id = form.truck_id || null;
-      } else if (form.truck_id) {
-        // For new deliveries, only include if it has a value
-        payload.truck_id = form.truck_id;
+      if (!form.is_external) {
+        if (editDelivery) {
+          payload.truck_id = form.truck_id || null;
+        } else if (form.truck_id) {
+          payload.truck_id = form.truck_id;
+        }
       }
       
       // If we're updating and have no orders, explicitly set empty array
@@ -803,6 +826,8 @@ export default function DeliveriesPage() {
       setForm({
         order_ids: [],
         truck_id: '',
+        is_external: false,
+        external_truck_label: '',
         scheduled_date: new Date(),
         scheduled_time: '',
         status: 'programmé',
@@ -881,17 +906,35 @@ export default function DeliveriesPage() {
       return;
     }
     
-    // Update form state
-    setForm(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    // Update form state with special handling for truck_id
+    if (field === 'truck_id') {
+      if (value === '__external__') {
+        setForm(prev => ({
+          ...prev,
+          truck_id: '',
+          is_external: true,
+          external_truck_label: ''
+        }));
+      } else {
+        setForm(prev => ({
+          ...prev,
+          truck_id: value,
+          is_external: false,
+          external_truck_label: ''
+        }));
+      }
+    } else {
+      setForm(prev => ({
+        ...prev,
+        [field]: value
+      }));
+    }
     
     // For truck or order changes, trigger capacity check
     if ((field === 'truck_id' || field === 'order_ids') && value) {
-      if (field === 'truck_id' && form.order_ids?.length > 0) {
+      if (field === 'truck_id' && value !== '__external__' && form.order_ids?.length > 0) {
         checkTruckCapacity(value, form.order_ids);
-      } else if (field === 'order_ids' && form.truck_id) {
+      } else if (field === 'order_ids' && form.truck_id && !form.is_external) {
         checkTruckCapacity(form.truck_id, value);
       }
     }
@@ -932,7 +975,7 @@ export default function DeliveriesPage() {
     }
     
     // Check capacity in real-time when orders change
-    if (form.truck_id && selectedIds.length > 0) {
+    if (form.truck_id && !form.is_external && selectedIds.length > 0) {
       await checkTruckCapacity(form.truck_id, selectedIds);
     } else {
       setTruckCapacity({ used: 0, total: 0, exceeded: false });
@@ -942,7 +985,7 @@ export default function DeliveriesPage() {
   const handleQuantityChange = (orderId, value) => {
     setOrderQuantities(prev => ({ ...prev, [orderId]: value }));
 
-    if (form.truck_id && form.order_ids?.length > 0) {
+    if (form.truck_id && !form.is_external && form.order_ids?.length > 0) {
       checkTruckCapacity(form.truck_id, form.order_ids);
     }
   };
@@ -1020,8 +1063,11 @@ export default function DeliveriesPage() {
     }
   };
   
-  const getTruckDetails = (truckId) => {
-    const truck = dependencies.trucks?.find(t => t.id === truckId);
+  const getTruckDetails = (delivery) => {
+    if (delivery.is_external) {
+      return delivery.external_truck_label || 'Transport externe';
+    }
+    const truck = dependencies.trucks?.find(t => t.id === delivery.truck_id);
     return truck ? `${truck.plate_number} (${truck.driver_name})` : 'Non défini';
   };
 
@@ -1081,7 +1127,7 @@ export default function DeliveriesPage() {
                         <div key={orderId}>{getOrderDetails(orderId, delivery.order_quantities?.[orderId])}</div>
                       )) || 'Aucune commande'}
                     </TableCell>
-                    <TableCell>{getTruckDetails(delivery.truck_id)}</TableCell>
+                    <TableCell>{getTruckDetails(delivery)}</TableCell>
                     <TableCell>{formatDateForDisplay(delivery.scheduled_date)}</TableCell>
                     <TableCell>{delivery.destination || 'Non spécifiée'}</TableCell>
                     <TableCell>
@@ -1607,6 +1653,9 @@ export default function DeliveriesPage() {
                 <MenuItem value="">
                   <em>Sélectionner un camion</em>
                 </MenuItem>
+                <MenuItem value="__external__">
+                  <em>-- Transport Externe --</em>
+                </MenuItem>
                 {dependencies.trucks?.map((truck) => (
                   <MenuItem key={truck.id} value={truck.id}>
                     <Box sx={{ width: '100%' }}>
@@ -1634,6 +1683,18 @@ export default function DeliveriesPage() {
                 <FormHelperText error>{formErrors.truck_id}</FormHelperText>
               )}
             </FormControl>
+
+            {form.is_external && (
+              <TextField
+                label="Camion externe (plaque ou libellé)"
+                fullWidth
+                margin="normal"
+                value={form.external_truck_label}
+                onChange={(e) => handleEditChange('external_truck_label', e.target.value)}
+                disabled={isViewer}
+                error={!!formErrors.truck_id}
+              />
+            )}
 
             <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
               <DatePicker
