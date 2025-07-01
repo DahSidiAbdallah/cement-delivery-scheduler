@@ -166,6 +166,8 @@ class DeliveryOrder(db.Model):
     __tablename__ = 'delivery_orders'
     delivery_id = db.Column(UUID(as_uuid=True), db.ForeignKey('deliveries.id'), primary_key=True)
     order_id = db.Column(UUID(as_uuid=True), db.ForeignKey('orders.id'), primary_key=True)
+    quantity = db.Column(db.Float, nullable=False, default=0)
+    quantity_deducted = db.Column(db.Boolean, default=False, nullable=False)
 
 class User(db.Model):
     __tablename__ = 'users'
