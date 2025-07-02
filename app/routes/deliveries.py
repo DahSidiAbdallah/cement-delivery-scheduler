@@ -120,7 +120,17 @@ def create_delivery():
             order = Order.query.get(oid)
             if not order:
                 return jsonify({"error": f"Order {oid} not found"}), 400
-            total_qty += order.quantity
+
+            qty = order_quantities.get(str(oid))
+            if qty is None:
+                qty = order.quantity
+
+            try:
+                qty = float(qty)
+            except (ValueError, TypeError):
+                return jsonify({"error": f"Invalid quantity for order {oid}"}), 400
+
+            total_qty += qty
         if truck and truck.capacity and total_qty > truck.capacity:
             return jsonify({"error": "Truck capacity exceeded"}), 400
 

@@ -552,9 +552,13 @@ export default function DeliveriesPage() {
         if (isNaN(qty) || qty <= 0) {
           errors.order_ids = 'Quantité invalide pour certaines commandes';
           isValid = false;
-        } else if (order && qty > parseFloat(order.quantity)) {
-          errors.order_ids = 'Quantité supérieure au disponible';
-          isValid = false;
+        } else if (order) {
+          const scheduled = editDelivery?.order_quantities?.[id] ?? 0;
+          const available = parseFloat(order.quantity) + parseFloat(scheduled);
+          if (qty > available) {
+            errors.order_ids = 'Quantité supérieure au disponible';
+            isValid = false;
+          }
         }
       });
     }
@@ -1507,13 +1511,15 @@ export default function DeliveriesPage() {
                 disabled={isViewer}
                 renderValue={(selected) => (
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                    {selected.map((orderId) => {
-                      const order = dependencies.orders?.find(o => o.id === orderId);
-                      if (!order) return null;
-                      return (
-                        <Chip
-                          key={orderId}
-                          label={`${order.client?.name || 'Client inconnu'} - ${order.quantity}t`}
+                      {selected.map((orderId) => {
+                        const order = dependencies.orders?.find(o => o.id === orderId);
+                        if (!order) return null;
+                        const scheduled = editDelivery?.order_quantities?.[orderId] ?? 0;
+                        const available = parseFloat(order.quantity) + parseFloat(scheduled);
+                        return (
+                          <Chip
+                            key={orderId}
+                            label={`${order.client?.name || 'Client inconnu'} - ${available}t`}
                           size="small"
                           sx={{ 
                             m: 0.5,
@@ -1567,9 +1573,9 @@ export default function DeliveriesPage() {
                             <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                               {order.client?.name || 'Client inconnu'}
                             </Typography>
-                            <Chip 
-                              label={`${order.quantity}t`} 
-                              size="small" 
+                            <Chip
+                              label={`${(parseFloat(order.quantity) + parseFloat(editDelivery?.order_quantities?.[order.id] ?? 0))}t`}
+                              size="small"
                               color="primary"
                               variant="outlined"
                               sx={{ ml: 1, fontSize: '0.7rem' }}
@@ -1628,11 +1634,15 @@ export default function DeliveriesPage() {
                       size="small"
                       value={orderQuantities[oid] ?? ''}
                       onChange={(e) => handleQuantityChange(oid, e.target.value)}
-                      inputProps={{ min: 0, max: order.quantity, step: 0.1 }}
+                      inputProps={{
+                        min: 0,
+                        max: parseFloat(order.quantity) + parseFloat(editDelivery?.order_quantities?.[oid] ?? 0),
+                        step: 0.1
+                      }}
                       sx={{ width: 80 }}
                     />
                     <Typography variant="caption" color="text.secondary">
-                      / {order.quantity}t
+                      / {parseFloat(order.quantity) + parseFloat(editDelivery?.order_quantities?.[oid] ?? 0)}t
                     </Typography>
                   </Box>
                 );
