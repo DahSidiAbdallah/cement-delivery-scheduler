@@ -9,7 +9,8 @@ import api from '../services/api';
 
 const roleOptions = [
   { value: 'admin', label: 'Administrateur' },
-  { value: 'viewer', label: 'Visualiseur' }
+  { value: 'viewer', label: 'Visualiseur' },
+  { value: 'expedition', label: 'Expédition' }
 ];
 
 export default function UsersPage({ showNotification }) {
@@ -79,7 +80,7 @@ export default function UsersPage({ showNotification }) {
       const userData = {
         username: form.username.trim(),
         role: form.role,
-        ...(form.password ? { password: form.password } : {})
+        ...(form.password ? { password_hash: form.password } : {})
       };
       
       if (editUser) {
@@ -129,7 +130,11 @@ export default function UsersPage({ showNotification }) {
               ) : users.map(u => (
                 <TableRow key={u.id}>
                   <TableCell>{u.username}</TableCell>
-                  <TableCell>{u.role === 'admin' ? 'Administrateur' : 'Visualiseur'}</TableCell>
+                  <TableCell>
+                    {u.role === 'admin' ? 'Administrateur' : 
+                     u.role === 'viewer' ? 'Visualiseur' : 
+                     u.role === 'expedition' ? 'Expédition' : u.role}
+                  </TableCell>
                   <TableCell>
                     <IconButton onClick={() => handleOpenDialog(u)} color="primary"><EditIcon /></IconButton>
                   </TableCell>

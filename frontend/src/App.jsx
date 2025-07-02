@@ -68,6 +68,27 @@ const AppContent = () => {
   const handleLogin = useCallback(() => {
     setIsAuthenticated(true);
   }, []);
+  
+  // Check if user has access to a route based on their role
+  const hasAccess = useCallback((requiredRole) => {
+    const userRole = localStorage.getItem('role') || 'viewer';
+    
+    // Admin has access to everything
+    if (userRole === 'admin') return true;
+    
+    // Expedition role only has access to schedule page
+    if (userRole === 'expedition') {
+      return requiredRole === 'schedule';
+    }
+    
+    // Viewer has access to orders, deliveries, and schedule
+    if (userRole === 'viewer') {
+      return ['orders', 'deliveries', 'schedule'].includes(requiredRole);
+    }
+    
+    // Default deny
+    return false;
+  }, []);
 
   const handleLogout = useCallback(() => {
     localStorage.removeItem('access_token');
@@ -147,10 +168,31 @@ const AppContent = () => {
               } 
             />
             
-            {/* Routes accessible to both admin and viewer */}
-            <Route path="/orders" element={<OrdersPage showNotification={showNotification} />} />
-            <Route path="/deliveries" element={<DeliveriesPage showNotification={showNotification} />} />
-            <Route path="/schedule" element={<SchedulePage showNotification={showNotification} autoRefresh={localStorage.getItem('role') === 'viewer'} />} />
+            {/* Protected routes based on role */}
+            <Route 
+              path="/orders" 
+              element={
+                hasAccess('orders') ? 
+                <OrdersPage showNotification={showNotification} /> : 
+                <Navigate to="/schedule" replace />
+              } 
+            />
+            <Route 
+              path="/deliveries" 
+              element={
+                hasAccess('deliveries') ? 
+                <DeliveriesPage showNotification={showNotification} /> : 
+                <Navigate to="/schedule" replace />
+              } 
+            />
+            <Route 
+              path="/schedule" 
+              element={
+                hasAccess('schedule') ? 
+                <SchedulePage showNotification={showNotification} autoRefresh={localStorage.getItem('role') === 'viewer'} /> : 
+                <Navigate to="/" replace />
+              } 
+            />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

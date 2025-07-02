@@ -251,10 +251,12 @@ export default function LoginPage({ showNotification, onLoginSuccess }) {
                 <Typography variant="body2" color="text.secondary">
                   Vous n'avez pas de compte ?{' '}
                   <Link 
-                    component={RouterLink} 
-                    to="/register" 
+                    href="https://wa.me/22237959569"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     color="primary"
                     underline="hover"
+                    sx={{ cursor: 'pointer' }}
                   >
                     Contactez l'administrateur
                   </Link>

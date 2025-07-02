@@ -1,26 +1,70 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
-import { AuthContext } from '../contexts/AuthContext';
-import {
-  Box, Button, Typography, Paper, Table, TableBody, TableCell, TableContainer, 
-  TableHead, TableRow, IconButton, Snackbar, Dialog, DialogTitle, DialogContent, 
-  DialogActions, CircularProgress, Alert, MenuItem, Select, InputLabel, FormControl, 
-  Chip, TextField, TablePagination, TableSortLabel, Tooltip, DialogContentText, Divider,
-  FormHelperText, Avatar, Stack
+import { 
+  Box, 
+  Button, 
+  Typography, 
+  Paper, 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableContainer, 
+  TableHead, 
+  TableRow, 
+  IconButton, 
+  Snackbar, 
+  Dialog, 
+  DialogTitle, 
+  DialogContent, 
+  DialogActions, 
+  CircularProgress, 
+  Alert, 
+  MenuItem, 
+  Select, 
+  InputLabel, 
+  FormControl, 
+  Chip, 
+  TextField, 
+  TablePagination, 
+  TableSortLabel, 
+  Tooltip, 
+  DialogContentText, 
+  Divider,
+  FormHelperText, 
+  Avatar, 
+  Stack, 
+  List, 
+  ListItem, 
+  ListItemText, 
+  ListItemAvatar, 
+  Badge
 } from '@mui/material';
 import NotesIcon from '@mui/icons-material/Notes';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import AddIcon from '@mui/icons-material/Add';
+import HistoryIcon from '@mui/icons-material/History';
+import WarningIcon from '@mui/icons-material/Warning';
+import CloseIcon from '@mui/icons-material/Close';
+import LocalShippingIcon from '@mui/icons-material/LocalShipping';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CancelIcon from '@mui/icons-material/Cancel';
+import ScheduleIcon from '@mui/icons-material/Schedule';
+import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import { DatePicker, LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { format, parseISO, isValid } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import api from '../services/api';
+import { AuthContext } from '../contexts/AuthContext';
 import Loading from './Loading';
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
+
+
 
 const statusColors = {
-  'en attente': 'warning',
+  'programmé': 'warning',
   'en cours': 'info',
   'livrée': 'success',
   'annulée': 'error'
@@ -95,6 +139,40 @@ const formatDateForDisplay = (dateString) => {
   }
 };
 
+const parseApiError = (error, defaultMessage = 'Une erreur est survenue') => {
+  if (error.response) {
+    const data = error.response.data || {};
+    let message = data.message || data.error || data.details || defaultMessage;
+
+    switch (error.response.status) {
+      case 400:
+        message = message || "Données invalides. Veuillez vérifier les informations saisies.";
+        break;
+      case 401:
+        message = 'Session expirée. Veuillez vous reconnecter.';
+        break;
+      case 404:
+        message = 'Ressource non trouvée. Veuillez rafraîchir la page.';
+        break;
+      case 409:
+        message = `Conflit de données : ${message}`;
+        break;
+      default:
+        if (error.response.status >= 500) {
+          message = 'Erreur serveur. Veuillez réessayer plus tard.';
+        }
+    }
+
+    return message;
+  }
+
+  if (error.request) {
+    return 'Pas de réponse du serveur. Vérifiez votre connexion internet.';
+  }
+
+  return error.message || defaultMessage;
+};
+
 export default function DeliveriesPage() {
   const [deliveries, setDeliveries] = useState([]);
   const [dependencies, setDependencies] = useState({ 
@@ -113,14 +191,27 @@ export default function DeliveriesPage() {
   const [form, setForm] = useState({
     order_ids: [],
     truck_id: '',
+    is_external: false,
+    external_truck_label: '',
     scheduled_date: new Date(),
     scheduled_time: '',
-    status: 'en attente',
+    status: 'programmé',
     destination: '',
     notes: ''
   });
+  const [orderQuantities, setOrderQuantities] = useState({});
+  const [formErrors, setFormErrors] = useState({
+    order_ids: '',
+    truck_id: '',
+    external_truck_label: '',
+    scheduled_date: '',
+    scheduled_time: '',
+    destination: ''
+  });
   const [truckCapacity, setTruckCapacity] = useState({ used: 0, total: 0, exceeded: false });
   const [deleteConfirmation, setDeleteConfirmation] = useState({ open: false, id: null });
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [selectedDelivery, setSelectedDelivery] = useState(null);
   
   // Get user role from AuthContext
   const { role } = useContext(AuthContext);
@@ -128,7 +219,8 @@ export default function DeliveriesPage() {
 
   const loadDeliveries = useCallback(async () => {
     try {
-      const response = await api.get('/deliveries');
+      // Include history in the response
+      const response = await api.get('/deliveries?include_history=true');
       setDeliveries(response.data);
     } catch (error) {
       console.error('Error loading deliveries:', error);
@@ -138,11 +230,47 @@ export default function DeliveriesPage() {
 
   const loadOrders = useCallback(async () => {
     try {
-      const response = await api.get('/orders?status=validée');
-      setDependencies(prev => ({ ...prev, orders: response.data }));
+      // Show loading state
+      setLoadingError(null);
+      
+      // Fetch both 'en attente' and 'validée' orders with client and product data
+      const [pendingResponse, validatedResponse, clientsResponse, productsResponse] = await Promise.all([
+        api.get('/orders?status=en attente').catch(() => ({ data: [] })),
+        api.get('/orders?status=validée').catch(() => ({ data: [] })),
+        api.get('/clients').catch(() => ({ data: [] })),
+        api.get('/products').catch(() => ({ data: [] }))
+      ]);
+      
+      // Combine both sets of orders
+      const allOrders = [...(pendingResponse?.data || []), ...(validatedResponse?.data || [])];
+      const clients = clientsResponse?.data || [];
+      const products = productsResponse?.data || [];
+      
+      if (allOrders.length === 0) {
+        setLoadingError('Aucune commande disponible pour le moment');
+      }
+      
+      // Enrich orders with client and product data
+      const enrichedOrders = allOrders.map(order => {
+        const client = clients.find(c => String(c.id) === String(order.client_id));
+        const product = products.find(p => String(p.id) === String(order.product_id));
+        
+        return {
+          ...order,
+          client: client || { id: order.client_id, name: 'Client inconnu' },
+          product: product || { id: order.product_id, name: 'Produit inconnu' }
+        };
+      });
+      
+      // Remove duplicates by order ID in case any order appears in both responses
+      const uniqueOrders = Array.from(new Map(enrichedOrders.map(order => [order.id, order])).values());
+      
+      setDependencies(prev => ({ ...prev, orders: uniqueOrders }));
     } catch (error) {
       console.error('Error loading orders:', error);
-      setLoadingError('Erreur lors du chargement des commandes');
+      const errorMessage = error.response?.data?.message || 'Erreur lors du chargement des commandes';
+      setLoadingError(errorMessage);
+      setSnackbar({ message: errorMessage, severity: 'error' });
     }
   }, []);
 
@@ -202,6 +330,14 @@ export default function DeliveriesPage() {
   const handleOpenDialog = (delivery = null) => {
     console.log('Opening dialog with delivery:', delivery);
     setEditDelivery(delivery);
+    // Reset form errors when opening dialog
+    setFormErrors({
+      order_ids: '',
+      truck_id: '',
+      scheduled_date: '',
+      scheduled_time: '',
+      destination: ''
+    });
     
     try {
       setEditDelivery(delivery);
@@ -245,16 +381,22 @@ export default function DeliveriesPage() {
         
         // Convert truck_id to string if it exists, or use empty string
         const truckId = delivery.truck_id ? String(delivery.truck_id) : '';
-        
+
+        const isExternal = delivery.is_external;
+        const externalLabel = delivery.external_truck_label || '';
+
         setForm({
           order_ids: orderIds,
           truck_id: truckId,
+          is_external: isExternal,
+          external_truck_label: externalLabel,
           scheduled_date: scheduledDate,
           scheduled_time: delivery.scheduled_time || '',
-          status: delivery.status || 'en attente',
+          status: delivery.status || 'programmé',
           destination: delivery.destination || '',
           notes: delivery.notes || ''
         });
+        setOrderQuantities(delivery.order_quantities || {});
         
         // If we have a truck ID, trigger capacity check
         if (delivery.truck_id && orderIds.length > 0) {
@@ -265,12 +407,15 @@ export default function DeliveriesPage() {
         setForm({
           order_ids: [],
           truck_id: '',
+          is_external: false,
+          external_truck_label: '',
           scheduled_date: new Date(),
           scheduled_time: '',
-          status: 'en attente',
+          status: 'programmé',
           destination: '',
           notes: ''
         });
+        setOrderQuantities({});
         setTruckCapacity({ used: 0, total: 0, exceeded: false });
       }
     } catch (error) {
@@ -279,10 +424,13 @@ export default function DeliveriesPage() {
       setForm({
         order_ids: [],
         truck_id: '',
+        is_external: false,
+        external_truck_label: '',
         scheduled_date: new Date(),
         scheduled_time: '',
-        status: 'en attente'
+        status: 'programmé'
       });
+      setOrderQuantities({});
       setTruckCapacity({ used: 0, total: 0, exceeded: false });
       setSnackbar({ 
         message: 'Erreur lors du chargement de la livraison', 
@@ -320,19 +468,16 @@ export default function DeliveriesPage() {
 
   // Calculate total quantity of selected orders
   const calculateTotalQuantity = useCallback((orderIds) => {
-    if (!orderIds || !orderIds.length || !dependencies.orders) return 0;
-    
+    if (!orderIds || !orderIds.length) return 0;
+
     const total = orderIds.reduce((sum, orderId) => {
-      const order = dependencies.orders.find(o => o && o.id === orderId);
-      if (!order) return sum;
-      
-      const quantity = parseFloat(order.quantity);
-      return isNaN(quantity) ? sum : sum + quantity;
+      const qty = parseFloat(orderQuantities[orderId]);
+      return isNaN(qty) ? sum : sum + qty;
     }, 0);
     
     console.log('Calculated total quantity:', { orderIds, total });
     return total;
-  }, [dependencies.orders]);
+  }, [orderQuantities]);
 
   // Check if selected orders exceed truck capacity
   const checkTruckCapacity = useCallback((truckId, orderIds) => {
@@ -370,6 +515,16 @@ export default function DeliveriesPage() {
       };
       
       setTruckCapacity(newCapacity);
+      
+      // Show warning if capacity is exceeded
+      if (exceeded) {
+        setSnackbar({
+          message: `Attention : La capacité du camion est dépassée (${totalQuantity.toFixed(1)}T > ${truckCapacityValue.toFixed(1)}T)`,
+          severity: 'warning',
+          autoHideDuration: 5000
+        });
+      }
+      
       return newCapacity.exceeded;
     } catch (error) {
       console.error('Error in checkTruckCapacity:', error);
@@ -380,46 +535,90 @@ export default function DeliveriesPage() {
 
   // Validate form fields
   const validateForm = () => {
-    // Validate date is not in the past
+    const errors = {};
+    let isValid = true;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    const selectedDate = new Date(form.scheduled_date);
-    selectedDate.setHours(0, 0, 0, 0);
-    
-    if (selectedDate < today) {
-      return { valid: false, message: 'La date de livraison ne peut pas être dans le passé' };
+    // Validate orders
+    if (!form.order_ids || form.order_ids.length === 0) {
+      errors.order_ids = 'Veuillez sélectionner au moins une commande';
+      isValid = false;
+    } else {
+      // Validate quantities for each selected order
+      form.order_ids.forEach(id => {
+        const qty = parseFloat(orderQuantities[id]);
+        const order = dependencies.orders.find(o => o.id === id);
+        if (isNaN(qty) || qty <= 0) {
+          errors.order_ids = 'Quantité invalide pour certaines commandes';
+          isValid = false;
+        } else if (order) {
+          const scheduled = editDelivery?.order_quantities?.[id] ?? 0;
+          const available = parseFloat(order.quantity) + parseFloat(scheduled);
+          if (qty > available) {
+            errors.order_ids = 'Quantité supérieure au disponible';
+            isValid = false;
+          }
+        }
+      });
     }
     
-    // If time is provided, validate it
+    // Validate truck
+    if (!form.is_external && !form.truck_id) {
+      errors.truck_id = 'Veuillez sélectionner un camion';
+      isValid = false;
+    }
+    if (form.is_external && (!form.external_truck_label || form.external_truck_label.trim() === '')) {
+      errors.truck_id = 'Veuillez préciser le camion externe';
+      isValid = false;
+    }
+    
+    // Validate date
+    if (!form.scheduled_date) {
+      errors.scheduled_date = 'Veuillez sélectionner une date';
+      isValid = false;
+    } else {
+      const selectedDate = new Date(form.scheduled_date);
+      selectedDate.setHours(0, 0, 0, 0);
+      
+      if (selectedDate < today) {
+        errors.scheduled_date = 'La date de livraison ne peut pas être dans le passé';
+        isValid = false;
+      }
+    }
+    
+    // Validate time format if provided
     if (form.scheduled_time) {
-      // First validate the time format (accepts both HH:MM and HH:MM:SS)
       const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/;
       if (!timeRegex.test(form.scheduled_time)) {
-        return { valid: false, message: 'Format d\'heure invalide. Utilisez le format HH:MM.' };
-      }
-      
-      // Extract hours and minutes (handle both HH:MM and HH:MM:SS formats)
-      const [hours, minutes] = form.scheduled_time.split(':');
-      
-      // Check if the time is in the past for today
-      const now = new Date();
-      if (selectedDate.getTime() === today.getTime()) {
-        const deliveryTime = new Date();
-        deliveryTime.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+        errors.scheduled_time = 'Format d\'heure invalide. Utilisez le format HH:MM.';
+        isValid = false;
+      } else {
+        // Check if time is in the past for today
+        const selectedDate = new Date(form.scheduled_date);
+        selectedDate.setHours(0, 0, 0, 0);
         
-        if (deliveryTime < now) {
-          return { valid: false, message: 'L\'heure de livraison ne peut pas être dans le passé' };
+        if (selectedDate.getTime() === today.getTime()) {
+          const [hours, minutes] = form.scheduled_time.split(':');
+          const deliveryTime = new Date();
+          deliveryTime.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+          
+          if (deliveryTime < new Date()) {
+            errors.scheduled_time = 'L\'heure de livraison ne peut pas être dans le passé';
+            isValid = false;
+          }
         }
       }
     }
     
     // Validate destination
     if (!form.destination || form.destination.trim() === '') {
-      return { valid: false, message: 'Veuillez spécifier une destination' };
+      errors.destination = 'Veuillez spécifier une destination';
+      isValid = false;
     }
     
-    return { valid: true };
+    setFormErrors(errors);
+    return { valid: isValid, errors };
   };
 
   // Check if orders are already scheduled in other deliveries
@@ -499,14 +698,25 @@ export default function DeliveriesPage() {
     }
   }, [dependencies.orders]);
 
+  const validateTimeFormat = (time) => {
+    if (!time) return true; // Empty is allowed
+    return /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(time);
+  };
+
   const handleSave = async () => {
     try {
-      // Basic validation
-      if (!form.order_ids || form.order_ids.length === 0) {
-        setSnackbar({ 
-          message: 'Veuillez sélectionner au moins une commande', 
-          severity: 'warning' 
-        });
+      // Validate form
+      const { valid, errors } = validateForm();
+      if (!valid) {
+        // Show first error message
+        const firstError = Object.values(errors).find(error => error);
+        if (firstError) {
+          setSnackbar({ 
+            message: firstError, 
+            severity: 'error',
+            autoHideDuration: 5000
+          });
+        }
         return;
       }
 
@@ -516,29 +726,24 @@ export default function DeliveriesPage() {
         if (!orderValidation.valid) {
           setSnackbar({ 
             message: orderValidation.message,
-            severity: 'warning'
+            severity: 'warning',
+            autoHideDuration: 10000
           });
           return;
         }
       }
 
-      // Validate truck capacity if we have orders and a truck
-      if (form.truck_id && form.order_ids?.length > 0) {
+      // Check truck capacity for internal trucks
+      if (!form.is_external && form.truck_id && form.order_ids?.length > 0) {
         const isExceeded = await checkTruckCapacity(form.truck_id, form.order_ids);
         if (isExceeded) {
           setSnackbar({ 
-            message: `La capacité du camion est dépassée (${truckCapacity.used.toFixed(1)}T > ${truckCapacity.total.toFixed(1)}T)`, 
-            severity: 'error' 
+            message: `La capacité du camion est dépassée (${truckCapacity.used.toFixed(1)}T > ${truckCapacity.total.toFixed(1)}T). Veuillez sélectionner un autre camion ou réduire la quantité de commandes.`, 
+            severity: 'error',
+            autoHideDuration: 10000
           });
           return;
         }
-      }
-      
-      // Validate other form fields
-      const validation = validateForm();
-      if (!validation.valid) {
-        setSnackbar({ message: validation.message, severity: 'warning' });
-        return;
       }
       
       console.log(editDelivery ? 'Updating delivery...' : 'Creating delivery...');
@@ -562,24 +767,38 @@ export default function DeliveriesPage() {
       // Prepare the payload
       const payload = {
         // Only include order_id if we have orders (for backward compatibility)
-        ...(orderIds.length > 0 && { 
+        ...(orderIds.length > 0 && {
           order_id: orderIds[0],
-          order_ids: orderIds 
+          order_ids: orderIds
         }),
         scheduled_date: formatDateForAPI(form.scheduled_date || new Date()),
         scheduled_time: form.scheduled_time ? formatTimeForAPI(form.scheduled_time) : null,
-        status: form.status || 'en attente',
+        status: form.status || 'programmé',
         destination: form.destination || '',
         notes: form.notes || ''
       };
+
+      if (form.is_external) {
+        payload.is_external = true;
+        payload.external_truck_label = form.external_truck_label || '';
+        payload.truck_id = null;
+      }
+
+      if (orderIds.length > 0) {
+        payload.order_quantities = {};
+        orderIds.forEach(id => {
+          payload.order_quantities[id] = parseFloat(orderQuantities[id] || 0);
+        });
+      }
       
       // Handle truck_id - always include it in the payload when updating
       // Convert empty string to null for the backend
-      if (editDelivery) {
-        payload.truck_id = form.truck_id || null;
-      } else if (form.truck_id) {
-        // For new deliveries, only include if it has a value
-        payload.truck_id = form.truck_id;
+      if (!form.is_external) {
+        if (editDelivery) {
+          payload.truck_id = form.truck_id || null;
+        } else if (form.truck_id) {
+          payload.truck_id = form.truck_id;
+        }
       }
       
       // If we're updating and have no orders, explicitly set empty array
@@ -611,46 +830,32 @@ export default function DeliveriesPage() {
       setForm({
         order_ids: [],
         truck_id: '',
+        is_external: false,
+        external_truck_label: '',
         scheduled_date: new Date(),
         scheduled_time: '',
-        status: 'en attente',
+        status: 'programmé',
         destination: '',
         notes: ''
       });
+      setOrderQuantities({});
       
     } catch (error) {
       console.error('Error saving delivery:', error);
-      let errorMessage = 'Erreur lors de la sauvegarde';
+      let errorMessage = 'Erreur lors de la sauvegarde de la livraison';
       
-      if (error.response) {
-        // Handle specific error cases
-        if (error.response.data) {
-          if (error.response.data.error) {
-            errorMessage = error.response.data.error;
-          } else if (error.response.data.details) {
-            errorMessage = error.response.data.details;
-          }
-        }
-        
-        if (error.response.status === 400) {
-          errorMessage = errorMessage || 'Données invalides. Veuillez vérifier les informations saisies.';
-        } else if (error.response.status === 401) {
-          errorMessage = 'Session expirée. Veuillez vous reconnecter.';
-        } else if (error.response.status === 404) {
-          errorMessage = 'Ressource non trouvée. Veuillez rafraîchir la page.';
-        } else if (error.response.status === 409) {
-          errorMessage = 'Conflit de données : ' + (errorMessage || 'Certaines commandes sont déjà planifiées');
-        } else if (error.response.status >= 500) {
-          errorMessage = 'Erreur serveur. Veuillez réessayer plus tard.';
-        }
-      } else if (error.request) {
-        // Request was made but no response received
-        errorMessage = 'Pas de réponse du serveur. Vérifiez votre connexion internet.';
+      // Handle specific error for truck capacity
+      if (error.response?.data?.error === 'Truck capacity exceeded') {
+        errorMessage = error.response.data.details || 'La capacité du camon est dépassée. Veuillez sélectionner un autre camion ou réduire la quantité de commandes.';
+      } else if (error.response?.data?.details) {
+        errorMessage = error.response.data.details;
+      } else if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
       } else if (error.message) {
         errorMessage = error.message;
       }
-      
-      setSnackbar({ 
+
+      setSnackbar({
         message: errorMessage,
         severity: 'error',
         autoHideDuration: 10000 // Show error messages longer
@@ -663,6 +868,14 @@ export default function DeliveriesPage() {
   const handleEditChange = (field, value) => {
     console.log(`Field ${field} changed to:`, value);
     
+    // Reset error for the field being changed
+    if (formErrors[field]) {
+      setFormErrors(prev => ({
+        ...prev,
+        [field]: ''
+      }));
+    }
+    
     // Special handling for time fields
     if (field === 'scheduled_time') {
       // If the value is a Date object from the time picker, format it to HH:MM
@@ -671,49 +884,113 @@ export default function DeliveriesPage() {
         const minutes = String(value.getMinutes()).padStart(2, '0');
         value = `${hours}:${minutes}`;
       } else if (typeof value === 'string') {
-        // Ensure time is in H:MM or HH:MM format
-        if (value !== '' && !/^\d{1,2}:\d{2}$/.test(value)) {
-          // If not in correct format, don't update
+        // Allow partial input (like "1" or "12:")
+        if (value !== '' && !/^\d{0,2}:?\d{0,2}$/.test(value)) {
           console.warn('Invalid time format, expected HH:MM, got:', value);
           return;
         }
       }
       
-      // Continue with the update if format is valid
-      const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
-      if (value === '' || timeRegex.test(value)) {
-        setForm(prev => ({
-          ...prev,
-          [field]: value
-        }));
+      // Update the form with the new value
+      setForm(prev => ({
+        ...prev,
+        [field]: value
+      }));
+      
+      // Validate time format when user finishes typing
+      if (value && value.length >= 4) { // At least "12:3"
+        const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/;
+        if (!timeRegex.test(value)) {
+          setFormErrors(prev => ({
+            ...prev,
+            scheduled_time: 'Format d\'heure invalide. Utilisez HH:MM.'
+          }));
+        }
       }
       return;
     }
     
-    // Update form state
-    setForm(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    // Update form state with special handling for truck_id
+    if (field === 'truck_id') {
+      if (value === '__external__') {
+        setForm(prev => ({
+          ...prev,
+          truck_id: '',
+          is_external: true,
+          external_truck_label: ''
+        }));
+      } else {
+        setForm(prev => ({
+          ...prev,
+          truck_id: value,
+          is_external: false,
+          external_truck_label: ''
+        }));
+      }
+    } else {
+      setForm(prev => ({
+        ...prev,
+        [field]: value
+      }));
+    }
     
-    // For truck or order changes, the useEffect will handle capacity check
-    if (field === 'truck_id' || field === 'order_ids') {
-      console.log(`Handling ${field} change - capacity check will be triggered by useEffect`);
+    // For truck or order changes, trigger capacity check
+    if ((field === 'truck_id' || field === 'order_ids') && value) {
+      if (field === 'truck_id' && value !== '__external__' && form.order_ids?.length > 0) {
+        checkTruckCapacity(value, form.order_ids);
+      } else if (field === 'order_ids' && form.truck_id && !form.is_external) {
+        checkTruckCapacity(form.truck_id, value);
+      }
     }
   };
 
   const handleOrderSelect = async (event) => {
     const selectedIds = event.target.value;
+
+    // Update form and clear any previous order errors
     setForm(prev => ({
       ...prev,
       order_ids: selectedIds
     }));
+
+    // Initialize quantities for new selections and remove unselected ones
+    setOrderQuantities(prev => {
+      const updated = { ...prev };
+      selectedIds.forEach(id => {
+        if (!(id in updated)) {
+          const order = dependencies.orders?.find(o => o.id === id);
+          updated[id] = order ? order.quantity : '';
+        }
+      });
+      Object.keys(updated).forEach(id => {
+        if (!selectedIds.includes(id)) {
+          delete updated[id];
+        }
+      });
+      return updated;
+    });
+    
+    // Clear order error if any
+    if (formErrors.order_ids) {
+      setFormErrors(prev => ({
+        ...prev,
+        order_ids: ''
+      }));
+    }
     
     // Check capacity in real-time when orders change
-    if (form.truck_id && selectedIds.length > 0) {
+    if (form.truck_id && !form.is_external && selectedIds.length > 0) {
       await checkTruckCapacity(form.truck_id, selectedIds);
     } else {
       setTruckCapacity({ used: 0, total: 0, exceeded: false });
+    }
+  };
+
+  const handleQuantityChange = (orderId, value) => {
+    setOrderQuantities(prev => ({ ...prev, [orderId]: value }));
+
+    if (form.truck_id && !form.is_external && form.order_ids?.length > 0) {
+      checkTruckCapacity(form.truck_id, form.order_ids);
     }
   };
 
@@ -739,31 +1016,62 @@ export default function DeliveriesPage() {
     }
   };
 
-  const getOrderDetails = (orderId) => {
+  const getOrderDetails = (orderId, scheduledQty) => {
     if (orderId == null) return 'ID de commande invalide';
     
     try {
-      // Find order by ID
-      const order = dependencies.orders?.find(o => o && o.id === orderId);
+      // Log available data for debugging
+      console.log('getOrderDetails - orderId:', orderId);
+      console.log('Available orders:', dependencies.orders?.length);
+      console.log('Available clients:', dependencies.clients?.length);
+      console.log('Available products:', dependencies.products?.length);
+      
+      // Find order by ID (convert both to string for comparison to handle number/string ID mismatches)
+      const order = dependencies.orders?.find(o => o && String(o.id) === String(orderId));
+      
       if (!order) {
         console.warn(`Order with ID ${orderId} not found in dependencies.orders`);
+        console.warn('Available order IDs:', dependencies.orders?.map(o => o?.id));
         return `Commande ${orderId} (non trouvée)`;
       }
       
-      // Get client and product details
-      const client = dependencies.clients?.find(c => c && c.id === order.client_id);
-      const product = dependencies.products?.find(p => p && p.id === order.product_id);
+      console.log('Found order:', order);
       
-      // Format the order details
-      return `${client?.name || 'Client inconnu'} (${order.quantity || 0}t - ${product?.name || 'Produit inconnu'}${product?.type ? ` - ${product.type}` : ''})`;
+      // Get client and product details (convert IDs to string for comparison)
+      const client = dependencies.clients?.find(c => c && String(c.id) === String(order.client_id));
+      const product = dependencies.products?.find(p => p && String(p.id) === String(order.product_id));
+      
+      console.log('Client match:', client);
+      console.log('Product match:', product);
+      
+      // Format the order date and time
+      const orderDate = order.requested_date ? new Date(order.requested_date) : null;
+      const formattedDate = orderDate ? format(orderDate, 'dd/MM/yyyy', { locale: fr }) : 'Date inconnue';
+      const formattedTime = order.requested_time ? order.requested_time.slice(0, 5) : ''; // Format as HH:MM
+      
+      // Format the order details with date and time
+      const details = [
+        client?.name || `Client inconnu (ID: ${order.client_id})`,
+        `${scheduledQty != null ? scheduledQty : order.quantity || 0}T`,
+        product?.name ? `de ${product.name}` : `Produit inconnu (ID: ${order.product_id})`,
+        product?.type ? `(${product.type})` : '',
+        `- ${formattedDate}`,
+        formattedTime ? `à ${formattedTime}` : ''
+      ].filter(Boolean).join(' ');
+      
+      return details;
     } catch (error) {
       console.error('Error in getOrderDetails:', error);
-      return `Commande ${orderId} (erreur)`;
+      console.error('Error details:', { orderId, error: error.message });
+      return `Commande ${orderId} (erreur d'affichage: ${error.message})`;
     }
   };
   
-  const getTruckDetails = (truckId) => {
-    const truck = dependencies.trucks?.find(t => t.id === truckId);
+  const getTruckDetails = (delivery) => {
+    if (delivery.is_external) {
+      return delivery.external_truck_label || 'Transport externe';
+    }
+    const truck = dependencies.trucks?.find(t => t.id === delivery.truck_id);
     return truck ? `${truck.plate_number} (${truck.driver_name})` : 'Non défini';
   };
 
@@ -810,6 +1118,7 @@ export default function DeliveriesPage() {
                 <TableCell>Destination</TableCell>
                 <TableCell>Notes</TableCell>
                 <TableCell>Statut</TableCell>
+                <TableCell>Retard</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -819,10 +1128,10 @@ export default function DeliveriesPage() {
                   <TableRow key={delivery.id} hover>
                     <TableCell>
                       {delivery.order_ids?.map(orderId => (
-                        <div key={orderId}>{getOrderDetails(orderId)}</div>
+                        <div key={orderId}>{getOrderDetails(orderId, delivery.order_quantities?.[orderId])}</div>
                       )) || 'Aucune commande'}
                     </TableCell>
-                    <TableCell>{getTruckDetails(delivery.truck_id)}</TableCell>
+                    <TableCell>{getTruckDetails(delivery)}</TableCell>
                     <TableCell>{formatDateForDisplay(delivery.scheduled_date)}</TableCell>
                     <TableCell>{delivery.destination || 'Non spécifiée'}</TableCell>
                     <TableCell>
@@ -861,15 +1170,47 @@ export default function DeliveriesPage() {
                         color={statusColors[delivery.status] || 'default'}
                       />
                     </TableCell>
+                    <TableCell>
+                      {delivery.delayed && (
+                        <Chip 
+                          icon={<WarningIcon />}
+                          label="En retard"
+                          color="warning"
+                          size="small"
+                          variant="outlined"
+                        />
+                      )}
+                    </TableCell>
                     <TableCell align="right">
-                      <IconButton onClick={() => handleOpenDialog(delivery)} disabled={isSaving || isDeleting}><EditIcon /></IconButton>
-                      <IconButton onClick={() => handleDelete(delivery.id)} disabled={isSaving || isDeleting}><DeleteIcon /></IconButton>
+                      <Tooltip title="Voir l'historique">
+                        <IconButton 
+                          onClick={() => {
+                            setSelectedDelivery(delivery);
+                            setHistoryDialogOpen(true);
+                          }}
+                          disabled={isSaving || isDeleting}
+                        >
+                          <HistoryIcon />
+                        </IconButton>
+                      </Tooltip>
+                      <IconButton 
+                        onClick={() => handleOpenDialog(delivery)} 
+                        disabled={isSaving || isDeleting}
+                      >
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton 
+                        onClick={() => handleDelete(delivery.id)} 
+                        disabled={isSaving || isDeleting}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
                     </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
+                  <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
                     <Typography color="textSecondary">Aucune livraison trouvée. Commencez par en ajouter une.</Typography>
                   </TableCell>
                 </TableRow>
@@ -879,163 +1220,675 @@ export default function DeliveriesPage() {
         </TableContainer>
       </Paper>
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>{editDelivery ? 'Modifier la livraison' : 'Ajouter une livraison'}</DialogTitle>
-        <DialogContent>
-          <FormControl fullWidth margin="normal" error={truckCapacity.exceeded}>
-            <InputLabel>Commandes *</InputLabel>
-            <Select
-              multiple
-              value={form.order_ids || []}
-              onChange={handleOrderSelect}
-              label="Commandes *"
-              renderValue={(selected) => `${selected.length} commande(s) sélectionnée(s)`}
-              required
-            >
-              {truckCapacity.total > 0 && (
-                <Box sx={{ p: 1, bgcolor: truckCapacity.exceeded ? '#ffebee' : '#e8f5e9', borderRadius: 1, m: 1 }}>
-                  <Typography variant="caption" color={truckCapacity.exceeded ? 'error' : 'textSecondary'}>
-                    Capacité: {truckCapacity.used.toFixed(1)}T / {truckCapacity.total.toFixed(1)}T
-                    {truckCapacity.exceeded && ' (Dépassement de capacité!)'}
-                  </Typography>
-                </Box>
-              )}
-              {dependencies.orders.map(order => (
-                <MenuItem key={order.id} value={order.id}>{getOrderDetails(order.id)}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControl fullWidth margin="normal" error={truckCapacity.exceeded}>
-            <InputLabel>Camion *</InputLabel>
-            <Select
-              value={form.truck_id || ''}
-              onChange={(e) => handleEditChange('truck_id', e.target.value)}
-              label="Camion *"
-              required
-            >
-              {dependencies.trucks && dependencies.trucks.map((truck) => {
-                const truckCapacity = parseFloat(truck.capacity);
-                const capacityText = !isNaN(truckCapacity) ? ` (Capacité: ${truckCapacity}T)` : '';
+      <Dialog 
+        open={historyDialogOpen} 
+        onClose={() => setHistoryDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            boxShadow: 3
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          bgcolor: 'primary.main',
+          color: 'primary.contrastText',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          py: 1.5
+        }}>
+          <Box>
+            <HistoryIcon sx={{ verticalAlign: 'middle', mr: 1 }} />
+            Historique de la livraison
+          </Box>
+          <IconButton 
+            edge="end" 
+            color="inherit" 
+            onClick={() => setHistoryDialogOpen(false)}
+            size="small"
+            sx={{
+              '&:hover': {
+                bgcolor: 'rgba(255, 255, 255, 0.1)'
+              }
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ p: 0, '&.MuiDialogContent-root': { py: 2 } }}>
+          {selectedDelivery && selectedDelivery.history && selectedDelivery.history.length > 0 ? (
+            <List disablePadding>
+              {selectedDelivery.history.map((record, index) => {
+                const statusColor = statusColors[record.status] || 'default';
+                const prevStatus = selectedDelivery.history[index + 1]?.status;
+                const isStatusChange = record.status !== prevStatus;
+                const formattedDate = new Date(record.changed_at).toLocaleString('fr-FR', {
+                  day: '2-digit',
+                  month: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                });
+                
                 return (
-                  <MenuItem key={truck.id} value={truck.id}>
-                    {truck.plate_number} {truck.driver_name ? `(${truck.driver_name})` : ''}{capacityText}
-                  </MenuItem>
+                  <React.Fragment key={record.id}>
+                    <ListItem 
+                      alignItems="flex-start"
+                      sx={{
+                        transition: 'all 0.2s',
+                        '&:hover': { bgcolor: 'action.hover' },
+                        py: 1.5,
+                        px: 2
+                      }}
+                    >
+                      <ListItemAvatar sx={{ minWidth: 48, mt: 0.5 }}>
+                        <Box sx={{ position: 'relative' }}>
+                          <Avatar 
+                            sx={{ 
+                              bgcolor: isStatusChange ? `${statusColor}.main` : 'grey.200',
+                              color: isStatusChange ? `${statusColor}.contrastText` : 'grey.600',
+                              width: 32,
+                              height: 32,
+                              fontSize: '0.75rem',
+                              boxShadow: 1
+                            }}
+                          >
+                            {record.changed_by ? record.changed_by.charAt(0).toUpperCase() : 'S'}
+                          </Avatar>
+                          {isStatusChange && (
+                            <Box 
+                              sx={{
+                                position: 'absolute',
+                                bottom: -4,
+                                right: -4,
+                                bgcolor: `${statusColor}.main`,
+                                color: `${statusColor}.contrastText`,
+                                borderRadius: '50%',
+                                width: 18,
+                                height: 18,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '0.6rem',
+                                boxShadow: 1
+                              }}
+                            >
+                              <SyncAltIcon fontSize="inherit" />
+                            </Box>
+                          )}
+                        </Box>
+                      </ListItemAvatar>
+                      <ListItemText
+                        primary={
+                          <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+                              <Chip 
+                                label={record.status} 
+                                size="small"
+                                color={statusColor}
+                                sx={{ 
+                                  fontWeight: 600,
+                                  textTransform: 'capitalize',
+                                  '& .MuiChip-label': { px: 1, py: 0.5 },
+                                  height: 22
+                                }}
+                              />
+                              {isStatusChange && prevStatus && (
+                                <Box sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary', fontSize: '0.75rem' }}>
+                                  <ArrowForwardIcon fontSize="inherit" sx={{ mx: 0.5 }} />
+                                  <Chip 
+                                    label={prevStatus}
+                                    size="small"
+                                    variant="outlined"
+                                    sx={{
+                                      height: 22,
+                                      '& .MuiChip-label': { px: 1, py: 0.5 },
+                                      fontSize: '0.7rem',
+                                      bgcolor: 'background.paper'
+                                    }}
+                                  />
+                                </Box>
+                              )}
+                            </Box>
+                            <Typography 
+                              component="span" 
+                              variant="caption" 
+                              color="text.secondary"
+                              sx={{
+                                fontSize: '0.7rem',
+                                whiteSpace: 'nowrap',
+                                bgcolor: 'background.default',
+                                px: 1,
+                                py: 0.25,
+                                borderRadius: 1
+                              }}
+                            >
+                              {formattedDate}
+                            </Typography>
+                          </Box>
+                        }
+                        secondary={
+                          <Box sx={{ mt: 1 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                              <PersonOutlineIcon fontSize="small" color="action" />
+                              <Typography 
+                                variant="body2" 
+                                color="text.primary"
+                                sx={{ fontWeight: 500, fontSize: '0.85rem' }}
+                              >
+                                {record.changed_by || 'Système'}
+                              </Typography>
+                            </Box>
+                            {record.notes && (
+                              <Box 
+                                sx={{
+                                  mt: 1,
+                                  p: 1.5,
+                                  bgcolor: 'background.paper',
+                                  borderRadius: 1,
+                                  borderLeft: `3px solid ${statusColor === 'default' ? 'grey.400' : `${statusColor}.main`}`,
+                                  fontSize: '0.85rem',
+                                  lineHeight: 1.5
+                                }}
+                              >
+                                {record.notes}
+                              </Box>
+                            )}
+                          </Box>
+                        }
+                        sx={{ my: 0, '& .MuiListItemText-primary': { mb: 0.5 } }}
+                      />
+                    </ListItem>
+                    {index < selectedDelivery.history.length - 1 && (
+                      <Divider 
+                        variant="inset" 
+                        component="li" 
+                        sx={{
+                          mx: 0,
+                          ml: '72px',
+                          borderColor: 'divider',
+                          my: 0.5
+                        }}
+                      />
+                    )}
+                  </React.Fragment>
                 );
               })}
-            </Select>
-            {truckCapacity.exceeded && (
-              <FormHelperText error>
-                {`Capacité dépassée: ${truckCapacity.used.toFixed(2)}T > ${truckCapacity.total.toFixed(2)}T`}
-              </FormHelperText>
+            </List>
+          ) : (
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center', 
+              py: 4,
+              textAlign: 'center'
+            }}>
+              <HistoryIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
+              <Typography variant="h6" color="text.secondary" gutterBottom>
+                Aucun historique disponible
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                L'historique des modifications apparaîtra ici.
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmation.open}
+        onClose={() => setDeleteConfirmation({ open: false, id: null })}
+      >
+        <DialogTitle>Confirmer la suppression</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Voulez-vous vraiment supprimer cette livraison ?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmation({ open: false, id: null })} color="inherit" disabled={isDeleting}>
+            Annuler
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained" disabled={isDeleting}>
+            Supprimer
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delivery Form Dialog */}
+      <Dialog 
+        open={dialogOpen} 
+        onClose={() => setDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            boxShadow: 3
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          bgcolor: 'primary.main',
+          color: 'primary.contrastText',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          py: 1.5
+        }}>
+          <Box>
+            <LocalShippingIcon sx={{ verticalAlign: 'middle', mr: 1 }} />
+            {editDelivery ? 'Modifier la livraison' : 'Nouvelle livraison'}
+          </Box>
+          <IconButton 
+            edge="end" 
+            color="inherit" 
+            onClick={() => setDialogOpen(false)}
+            size="small"
+            sx={{
+              '&:hover': {
+                bgcolor: 'rgba(255, 255, 255, 0.1)'
+              }
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ '&.MuiDialogContent-root': { py: 3 } }}>
+          <Box sx={{ mt: 1 }}>
+            <FormControl fullWidth margin="normal" error={!!formErrors.order_ids}>
+              <InputLabel id="order-select-label">Commandes *</InputLabel>
+              <Select
+                labelId="order-select-label"
+                id="order-select"
+                multiple
+                value={form.order_ids || []}
+                onChange={handleOrderSelect}
+                label="Commandes *"
+                disabled={isViewer}
+                renderValue={(selected) => (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                      {selected.map((orderId) => {
+                        const order = dependencies.orders?.find(o => o.id === orderId);
+                        if (!order) return null;
+                        const scheduled = editDelivery?.order_quantities?.[orderId] ?? 0;
+                        const available = parseFloat(order.quantity) + parseFloat(scheduled);
+                        return (
+                          <Chip
+                            key={orderId}
+                            label={`${order.client?.name || 'Client inconnu'} - ${available}t`}
+                          size="small"
+                          sx={{ 
+                            m: 0.5,
+                            bgcolor: 'primary.lighter',
+                            color: 'primary.dark',
+                            '& .MuiChip-deleteIcon': {
+                              color: 'primary.dark',
+                              '&:hover': {
+                                color: 'primary.main'
+                              }
+                            }
+                          }}
+                          onDelete={() => {
+                            handleEditChange('order_ids', form.order_ids.filter(id => id !== orderId));
+                          }}
+                        />
+                      );
+                    })}
+                  </Box>
+                )}
+                MenuProps={{
+                  PaperProps: {
+                    style: {
+                      maxHeight: 300,
+                      width: '100%',
+                    },
+                  },
+                }}
+              >
+                {dependencies.orders
+                  ?.filter(order => order.status === 'en attente' || order.status === 'validée')
+                  .sort((a, b) => {
+                    // Sort by client name, then by order date
+                    const clientCompare = (a.client?.name || '').localeCompare(b.client?.name || '');
+                    if (clientCompare !== 0) return clientCompare;
+                    return new Date(b.requested_date) - new Date(a.requested_date);
+                  })
+                  .map((order) => {
+                    const orderDate = order.requested_date 
+                      ? new Date(order.requested_date).toLocaleDateString('fr-FR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: '2-digit'
+                        })
+                      : 'Date inconnue';
+                      
+                    return (
+                      <MenuItem key={order.id} value={order.id}>
+                        <Box sx={{ width: '100%' }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                              {order.client?.name || 'Client inconnu'}
+                            </Typography>
+                            <Chip
+                              label={`${(parseFloat(order.quantity) + parseFloat(editDelivery?.order_quantities?.[order.id] ?? 0))}t`}
+                              size="small"
+                              color="primary"
+                              variant="outlined"
+                              sx={{ ml: 1, fontSize: '0.7rem' }}
+                            />
+                          </Box>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+                            <Typography variant="body2" color="text.secondary">
+                              {order.product?.name || 'Produit inconnu'}
+                              {order.product?.type && ` (${order.product.type})`}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {orderDate}
+                            </Typography>
+                          </Box>
+                          {order.notes && (
+                            <Typography 
+                              variant="caption" 
+                              color="text.secondary"
+                              sx={{
+                                display: 'block',
+                                mt: 0.5,
+                                fontStyle: 'italic',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                maxWidth: '100%'
+                              }}
+                            >
+                              {order.notes}
+                            </Typography>
+                          )}
+                        </Box>
+                      </MenuItem>
+                    );
+                  })}
+              </Select>
+              {formErrors.order_ids && (
+                <FormHelperText error>{formErrors.order_ids}</FormHelperText>
+              )}
+              {form.order_ids?.length > 0 && (
+                <FormHelperText>
+                  {`${form.order_ids.length} commande(s) sélectionnée(s)`}
+                </FormHelperText>
+              )}
+              {form.order_ids?.map((oid) => {
+                const order = dependencies.orders?.find(o => o.id === oid);
+                if (!order) return null;
+                return (
+                  <Box key={oid} sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+                    <Typography variant="body2" sx={{ flexGrow: 1 }}>
+                      {order.client?.name || 'Client'} - {order.product?.name || ''}
+                    </Typography>
+                    <TextField
+                      label="Qté"
+                      type="number"
+                      size="small"
+                      value={orderQuantities[oid] ?? ''}
+                      onChange={(e) => handleQuantityChange(oid, e.target.value)}
+                      inputProps={{
+                        min: 0,
+                        max: parseFloat(order.quantity) + parseFloat(editDelivery?.order_quantities?.[oid] ?? 0),
+                        step: 0.1
+                      }}
+                      sx={{ width: 80 }}
+                    />
+                    <Typography variant="caption" color="text.secondary">
+                      / {parseFloat(order.quantity) + parseFloat(editDelivery?.order_quantities?.[oid] ?? 0)}t
+                    </Typography>
+                  </Box>
+                );
+              })}
+            </FormControl>
+
+            <FormControl fullWidth margin="normal">
+              <InputLabel id="truck-select-label">Camion *</InputLabel>
+              <Select
+                labelId="truck-select-label"
+                id="truck-select"
+                value={form.truck_id || ''}
+                onChange={(e) => handleEditChange('truck_id', e.target.value)}
+                label="Camion *"
+                disabled={isViewer}
+                error={!!formErrors.truck_id}
+              >
+                <MenuItem value="">
+                  <em>Sélectionner un camion</em>
+                </MenuItem>
+                <MenuItem value="__external__">
+                  <em>-- Transport Externe --</em>
+                </MenuItem>
+                {dependencies.trucks?.map((truck) => (
+                  <MenuItem key={truck.id} value={truck.id}>
+                    <Box sx={{ width: '100%' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 500 }}>
+                          {truck.plate_number}
+                        </Typography>
+                        <Chip 
+                          label={`${truck.capacity || 0}T`} 
+                          size="small" 
+                          color="primary"
+                          variant="outlined"
+                          sx={{ ml: 1, fontSize: '0.7rem' }}
+                        />
+                      </Box>
+                      <Typography variant="body2" color="text.secondary">
+                        {truck.driver_name || 'Chauffeur non spécifié'}
+                        {truck.phone_number && ` • ${truck.phone_number}`}
+                      </Typography>
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+              {formErrors.truck_id && (
+                <FormHelperText error>{formErrors.truck_id}</FormHelperText>
+              )}
+            </FormControl>
+
+            {form.is_external && (
+              <TextField
+                label="Camion externe (plaque ou libellé)"
+                fullWidth
+                margin="normal"
+                value={form.external_truck_label}
+                onChange={(e) => handleEditChange('external_truck_label', e.target.value)}
+                disabled={isViewer}
+                error={!!formErrors.truck_id}
+              />
             )}
-            {form.truck_id && !truckCapacity.exceeded && truckCapacity.total > 0 && (
-              <FormHelperText>
-                {`Capacité utilisée: ${truckCapacity.used.toFixed(2)}T / ${truckCapacity.total.toFixed(2)}T`}
-              </FormHelperText>
-            )}
-          </FormControl>
-          <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
-            <Box display="flex" gap={2} mb={2}>
+
+            <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
               <DatePicker
-                label="Date de livraison"
+                label="Date de livraison *"
                 value={form.scheduled_date}
-                onChange={(date) => setForm({ ...form, scheduled_date: date })}
+                onChange={(newValue) => handleEditChange('scheduled_date', newValue)}
                 renderInput={(params) => (
                   <TextField 
                     {...params} 
                     fullWidth 
                     margin="normal" 
-                    disabled={isSaving} 
-                    required
+                    error={!!formErrors.scheduled_date}
+                    helperText={formErrors.scheduled_date}
                   />
                 )}
+                minDate={new Date()}
+                disabled={isViewer}
               />
-              <TextField
-                label="Heure (HH:MM)"
-                type="time"
-                value={form.scheduled_time || ''}
-                onChange={(e) => {
-                  // Ensure consistent time format (HH:MM)
-                  const timeValue = e.target.value;
-                  if (timeValue) {
-                    const [hours, minutes] = timeValue.split(':');
-                    const formattedTime = `${hours.padStart(2, '0')}:${minutes}`;
-                    setForm({ ...form, scheduled_time: formattedTime });
-                  } else {
-                    setForm({ ...form, scheduled_time: '' });
+            </LocalizationProvider>
+
+            <TextField
+              label="Heure de livraison *"
+              fullWidth
+              margin="normal"
+              type="time"
+              value={form.scheduled_time || ''}
+              onChange={(e) => {
+                // Format the time to HH:MM
+                let timeValue = e.target.value;
+                if (timeValue && timeValue.length === 5) {
+                  // Ensure proper formatting
+                  const [hours, minutes] = timeValue.split(':');
+                  if (hours && minutes) {
+                    timeValue = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
                   }
-                }}
-                fullWidth
-                margin="normal"
-                disabled={isSaving}
-                InputLabelProps={{
-                  shrink: true,
-                }}
-                inputProps={{
-                  step: 300, // 5 min
-                }}
-                placeholder="HH:MM"
-              />
-            </Box>
-          </LocalizationProvider>
-          <FormControl fullWidth margin="normal">
-            <InputLabel id="status-select-label">Statut</InputLabel>
-            <Select
-              labelId="status-select-label"
-              value={form.status}
-              onChange={(e) => setForm({ ...form, status: e.target.value })}
-              label="Statut"
-              disabled={isSaving}
+                }
+                handleEditChange('scheduled_time', timeValue);
+              }}
+              InputLabelProps={{
+                shrink: true,
+              }}
+              inputProps={{
+                step: 300, // 5 min
+              }}
+              disabled={isViewer}
+              error={!!formErrors.scheduled_time}
+              helperText={formErrors.scheduled_time || 'Format: HH:MM (ex: 14:30)'}
+            />
+
+            <TextField
+              label="Destination *"
+              fullWidth
+              margin="normal"
+              value={form.destination || ''}
+              onChange={(e) => handleEditChange('destination', e.target.value)}
+              disabled={isViewer}
+              error={!!formErrors.destination}
+              helperText={formErrors.destination}
+              required
+            />
+
+            <TextField
+              label="Notes"
+              fullWidth
+              margin="normal"
+              value={form.notes || ''}
+              onChange={(e) => handleEditChange('notes', e.target.value)}
+              multiline
+              rows={3}
+              disabled={isViewer}
+              helperText="Informations complémentaires sur la livraison"
+            />
+
+            <FormControl fullWidth margin="normal">
+              <InputLabel id="status-select-label">Statut *</InputLabel>
+              <Select
+                labelId="status-select-label"
+                id="status-select"
+                value={form.status || 'programmé'}
+                onChange={(e) => handleEditChange('status', e.target.value)}
+                label="Statut *"
+                disabled={isViewer}
+                error={!!formErrors.status}
+              >
+                <MenuItem value="programmé">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <ScheduleIcon color="primary" fontSize="small" />
+                    <span>Programmé</span>
+                  </Box>
+                </MenuItem>
+                <MenuItem value="en cours">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <LocalShippingIcon color="info" fontSize="small" />
+                    <span>En cours</span>
+                  </Box>
+                </MenuItem>
+                <MenuItem value="livrée">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CheckCircleIcon color="success" fontSize="small" />
+                    <span>Livrée</span>
+                  </Box>
+                </MenuItem>
+                <MenuItem value="annulée">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CancelIcon color="error" fontSize="small" />
+                    <span>Annulée</span>
+                  </Box>
+                </MenuItem>
+              </Select>
+              {formErrors.status && (
+                <FormHelperText error>{formErrors.status}</FormHelperText>
+              )}
+            </FormControl>
+
+            {truckCapacity.total > 0 && (
+              <Box mt={2} p={1.5} sx={{
+                borderRadius: 1,
+                bgcolor: truckCapacity.exceeded ? 'error.lighter' : 'success.lighter',
+                border: `1px solid ${truckCapacity.exceeded ? 'error.light' : 'success.light'}`,
+              }}>
+                <Box display="flex" alignItems="center" justifyContent="space-between">
+                  <Typography variant="body2" fontWeight={500} color={truckCapacity.exceeded ? 'error.dark' : 'success.dark'}>
+                    Capacité du camion
+                  </Typography>
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <Typography variant="body2" fontWeight={600} color={truckCapacity.exceeded ? 'error.main' : 'success.main'}>
+                      {truckCapacity.used.toFixed(1)}T / {truckCapacity.total.toFixed(1)}T
+                    </Typography>
+                    {truckCapacity.exceeded && (
+                      <Chip 
+                        label="Dépassement" 
+                        size="small" 
+                        color="error"
+                        variant="outlined"
+                        sx={{ fontWeight: 600, fontSize: '0.7rem' }}
+                      />
+                    )}
+                  </Box>
+                </Box>
+                {truckCapacity.exceeded && (
+                  <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
+                    La capacité du camion est dépassée. Veuillez sélectionner un autre camion ou réduire le nombre de commandes.
+                  </Typography>
+                )}
+              </Box>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Button 
+            onClick={() => setDialogOpen(false)}
+            variant="outlined"
+            color="inherit"
+            disabled={isSaving}
+          >
+            Annuler
+          </Button>
+          {!isViewer && (
+            <Button 
+              onClick={handleSave} 
+              variant="contained" 
+              color="primary"
+              disabled={isSaving || (truckCapacity.exceeded && form.status !== 'annulée')}
+              startIcon={isSaving ? <CircularProgress size={20} color="inherit" /> : null}
+              sx={{ minWidth: 120 }}
             >
-              {Object.keys(statusColors).map(status => (
-                <MenuItem key={status} value={status}>{status}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <TextField
-            label="Destination"
-            value={form.destination || ''}
-            onChange={(e) => setForm({ ...form, destination: e.target.value })}
-            fullWidth
-            margin="normal"
-            required
-            disabled={isSaving}
-          />
-          <TextField
-            label="Notes"
-            value={form.notes || ''}
-            onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            fullWidth
-            margin="normal"
-            multiline
-            rows={3}
-            disabled={isSaving}
-            placeholder="Ajoutez des notes ou des instructions pour cette livraison"
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDialogOpen(false)} disabled={isSaving}>Annuler</Button>
-          <Button onClick={handleSave} variant="contained" disabled={isSaving}>
-            {isSaving ? <CircularProgress size={24} /> : 'Sauvegarder'}
-          </Button>
+              {isSaving ? 'Enregistrement...' : 'Enregistrer'}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
-
-      <Dialog open={deleteConfirmation.open} onClose={() => setDeleteConfirmation({ open: false, id: null })}>
-        <DialogTitle>Confirmer la suppression</DialogTitle>
-        <DialogContent>
-          <Typography>Êtes-vous sûr de vouloir supprimer cette livraison ? Cette action est irréversible.</Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteConfirmation({ open: false, id: null })} disabled={isDeleting}>Annuler</Button>
-          <Button onClick={handleDeleteConfirm} color="error" variant="contained" disabled={isDeleting}>
-            {isDeleting ? <CircularProgress size={24} /> : 'Supprimer'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Snackbar open={!!snackbar} autoHideDuration={6000} onClose={() => setSnackbar(null)}>
-        <Alert onClose={() => setSnackbar(null)} severity={snackbar?.severity || 'info'} sx={{ width: '100%' }}>
+      {/* Snackbar for notifications */}
+      <Snackbar
+        open={!!snackbar}
+        autoHideDuration={snackbar?.autoHideDuration || 3000}
+        onClose={() => setSnackbar(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setSnackbar(null)} 
+          severity={snackbar?.severity || 'info'}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
           {snackbar?.message}
         </Alert>
       </Snackbar>

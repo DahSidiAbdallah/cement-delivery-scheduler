@@ -1,0 +1,80 @@
+.formField {
+  margin-bottom: 16px;
+  width: 100%;
+}
+
+.formField .MuiFormControl-root,
+.formField .MuiAutocomplete-root,
+.formField .MuiTextField-root {
+  width: 100%;
+  margin: 0;
+}
+
+.formField .MuiOutlinedInput-root {
+  height: 40px;
+}
+
+.formField .MuiInputLabel-root {
+  line-height: 1.2;
+}
+
+.formField .MuiInputLabel-root.MuiInputLabel-shrink {
+  transform: translate(14px, -6px) scale(0.75);
+}
+
+.formField .MuiInputBase-input {
+  padding: 8.5px 14px;
+  height: auto;
+  font-size: 0.875rem;
+}
+
+.formField .MuiAutocomplete-hasPopupIcon.MuiAutocomplete-hasClearIcon .MuiAutocomplete-inputRoot {
+  padding-right: 39px;
+}
+
+.formField .MuiAutocomplete-inputRoot {
+  padding: 0 14px;
+}
+
+.formField .MuiAutocomplete-inputRoot .MuiAutocomplete-input {
+  padding: 8.5px 4px 8.5px 0;
+}
+
+/* Ensure consistent grid layout */
+.formGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 600px) {
+  .formGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 1200px) {
+  .formGrid {
+    grid-template-columns: 1.5fr 1fr 1fr 1fr 1fr auto;
+  }
+}
+
+/* Button styles */
+.submitButton {
+  height: 40px;
+  white-space: nowrap;
+  min-width: 100%;
+  margin-bottom: 0 !important;
+}
+
+@media (min-width: 600px) {
+  .submitButton {
+    min-width: 120px;
+  }
+}
+
+@media (max-width: 600px) {
+  .submitButton {
+    grid-column: 1 / -1;
+  }
+}

@@ -79,7 +79,7 @@ const navItems = [
     label: 'Calendrier', 
     to: '/schedule', 
     icon: <CalendarMonthIcon />,
-    roles: ['admin', 'viewer'] // Show to both roles
+    roles: ['admin', 'viewer', 'expedition'] // Show to admin, viewer, and expedition roles
   },
 ];
 

@@ -39,13 +39,18 @@ def create_order():
             except Exception:
                 return jsonify({"error": "Invalid time format, should be HH:MM"}), 400
 
+        # Ensure status is lowercase for consistency
+        status = data.get('status', 'en attente')
+        if status:
+            status = status.lower()
+            
         new_order = Order(
             client_id=client_id,
             product_id=product_id,
             quantity=data['quantity'],
             requested_date=data['requested_date'],
             requested_time=data.get('requested_time'),
-            status=data.get('status', 'Pending')
+            status=status
         )
         db.session.add(new_order)
         db.session.commit()
@@ -111,10 +116,31 @@ def update_order(order_id):
             except Exception:
                 return jsonify({"error": "Invalid time format, should be HH:MM"}), 400
 
+        # Get current status before update and ensure lowercase
+        old_status = order.status.lower() if order.status else 'en attente'
+        new_status = data.get('status', old_status)
+        if new_status:
+            new_status = new_status.lower()
+        
+        # Validate status transition
+        if old_status != new_status:
+            valid_transitions = {
+                'en attente': ['planifié', 'annulé'],
+                'planifié': ['en cours', 'livrée', 'annulé'],
+                'en cours': ['livrée', 'annulé'],
+                'livrée': [],  # Once delivered, no further changes allowed
+                'annulé': []   # Once cancelled, no further changes allowed
+            }
+            
+            if new_status not in valid_transitions.get(old_status, []):
+                return jsonify({"error": f"Invalid status transition from {old_status} to {new_status}"}), 400
+        
+        # Update order fields
         order.quantity = data.get('quantity', order.quantity)
         order.requested_date = data.get('requested_date', order.requested_date)
         order.requested_time = data.get('requested_time', order.requested_time)
-        order.status = data.get('status', order.status)
+        order.status = new_status
+        
         db.session.commit()
         logging.info(f"Order updated with ID: {order.id}")
         return jsonify({"message": "Order updated"}), 200
@@ -144,4 +170,42 @@ def delete_order(order_id):
         return jsonify({"message": "Order deleted"}), 200
     except Exception as e:
         logging.exception("Exception occurred while deleting order")
+        return jsonify({"error": "Server error", "details": str(e)}), 500
+
+
+@bp.route('/<order_id>/deliveries', methods=['GET', 'OPTIONS'])
+@jwt_required()
+def get_order_deliveries(order_id):
+    """Return deliveries linked to a given order."""
+    if request.method == 'OPTIONS':
+        return '', 200
+    try:
+        try:
+            order_uuid = uuid.UUID(order_id)
+        except Exception:
+            return jsonify({"message": "Invalid order ID format"}), 400
+
+        # Deliveries linked via the many-to-many table
+        deliveries = db.session.query(Delivery).join(
+            DeliveryOrder, Delivery.id == DeliveryOrder.delivery_id
+        ).filter(DeliveryOrder.order_id == order_uuid).all()
+
+        # Also check legacy single order_id field
+        legacy = Delivery.query.filter_by(order_id=order_uuid).all()
+
+        all_deliveries = {d.id: d for d in deliveries + legacy}.values()
+
+        result = [
+            {
+                "id": str(d.id),
+                "status": d.status,
+                "scheduled_date": d.scheduled_date.isoformat() if d.scheduled_date else None,
+                "scheduled_time": str(d.scheduled_time) if d.scheduled_time else None,
+            }
+            for d in all_deliveries
+        ]
+
+        return jsonify(result), 200
+    except Exception as e:
+        logging.exception("Exception occurred while getting order deliveries")
         return jsonify({"error": "Server error", "details": str(e)}), 500
