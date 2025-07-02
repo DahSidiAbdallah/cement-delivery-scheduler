@@ -13,6 +13,7 @@ import {
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
+import HistoryIcon from '@mui/icons-material/History';
 import api from '../services/api';
 import RefreshIcon from '@mui/icons-material/Refresh';
 
@@ -413,8 +414,9 @@ export default function OrdersPage() {
 
   return (
     <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
-      <Paper sx={{ p: { xs: 1.5, sm: 2, md: 3 }, mb: 3 }} elevation={2}>
-        <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: 'primary.main' }}>Nouvelle Commande</Typography>
+      {role !== 'visualiseur' && (
+        <Paper sx={{ p: { xs: 1.5, sm: 2, md: 3 }, mb: 3 }} elevation={2}>
+          <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, color: 'primary.main' }}>Nouvelle Commande</Typography>
         <Box className={styles.formGrid}>
           <FormControl fullWidth size="small" className={styles.formField}>
             <Autocomplete
@@ -528,6 +530,7 @@ export default function OrdersPage() {
           </Button>
         </Box>
       </Paper>
+      )}
 
       <Paper sx={{ 
         p: { xs: 1.5, sm: 2, md: 3 }, 
@@ -602,8 +605,8 @@ export default function OrdersPage() {
                         />
                       </TableCell>
                       <TableCell>
-                        {!isViewer && (
-                          <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          {role === 'visualiseur' ? (
                             <IconButton 
                               color="primary" 
                               onClick={() => handleEditOpen(order)}
@@ -611,19 +614,31 @@ export default function OrdersPage() {
                               disabled={isSaving}
                               sx={{ '&:hover': { bgcolor: 'primary.light', color: 'white' } }}
                             >
-                              <EditIcon fontSize="small" />
+                              <HistoryIcon fontSize="small" />
                             </IconButton>
-                            <IconButton 
-                              color="error" 
-                              onClick={() => setDeleteId(order.id)}
-                              size="small"
-                              disabled={isDeleting}
-                              sx={{ '&:hover': { bgcolor: 'error.light', color: 'white' } }}
-                            >
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
-                          </Box>
-                        )}
+                          ) : (
+                            <>
+                              <IconButton 
+                                color="primary" 
+                                onClick={() => handleEditOpen(order)}
+                                size="small"
+                                disabled={isSaving}
+                                sx={{ '&:hover': { bgcolor: 'primary.light', color: 'white' } }}
+                              >
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                              <IconButton 
+                                color="error" 
+                                onClick={() => setDeleteId(order.id)}
+                                size="small"
+                                disabled={isDeleting}
+                                sx={{ '&:hover': { bgcolor: 'error.light', color: 'white' } }}
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </>
+                          )}
+                        </Box>
                       </TableCell>
                     </TableRow>
                   );

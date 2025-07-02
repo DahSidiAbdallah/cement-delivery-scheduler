@@ -69,14 +69,13 @@ export default function SchedulePage({ autoRefresh = false }) {
       }
     }
     
-    if (isAdmin) {
-      const savedStats = localStorage.getItem('deliveryStats');
-      if (savedStats) {
-        try {
-          setScheduleStats(JSON.parse(savedStats));
-        } catch (e) {
-          console.error('Failed to parse saved stats', e);
-        }
+    // Load stats for all users
+    const savedStats = localStorage.getItem('deliveryStats');
+    if (savedStats) {
+      try {
+        setScheduleStats(JSON.parse(savedStats));
+      } catch (e) {
+        console.error('Failed to parse saved stats', e);
       }
     }
     

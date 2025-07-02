@@ -466,6 +466,25 @@ export default function DeliveriesPage() {
   // Alias for backward compatibility
   const isValidUUID = normalizeUUID;
 
+  // Calculate remaining quantity for an order (total ordered - sum of all scheduled quantities)
+  const calculateRemainingQuantity = useCallback((orderId, currentDeliveryId) => {
+    const order = dependencies.orders?.find(o => o.id === orderId);
+    if (!order) return 0;
+    
+    // Start with the full order quantity
+    let remaining = parseFloat(order.quantity);
+    
+    // Subtract quantities from all deliveries that include this order
+    // Exclude the current delivery if we're editing it
+    deliveries.forEach(delivery => {
+      if (delivery.id !== currentDeliveryId && delivery.order_quantities && delivery.order_quantities[orderId]) {
+        remaining -= parseFloat(delivery.order_quantities[orderId]);
+      }
+    });
+    
+    return Math.max(0, remaining); // Ensure we don't go below 0
+  }, [dependencies.orders, deliveries]);
+
   // Calculate total quantity of selected orders
   const calculateTotalQuantity = useCallback((orderIds) => {
     if (!orderIds || !orderIds.length) return 0;
@@ -1119,7 +1138,7 @@ export default function DeliveriesPage() {
                 <TableCell>Notes</TableCell>
                 <TableCell>Statut</TableCell>
                 <TableCell>Retard</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                {!['visualiseur', 'expedition'].includes(role) && <TableCell align="right">Actions</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -1181,31 +1200,34 @@ export default function DeliveriesPage() {
                         />
                       )}
                     </TableCell>
-                    <TableCell align="right">
-                      <Tooltip title="Voir l'historique">
+                    {!['visualiseur', 'expedition'].includes(role) && (
+                      <TableCell align="right">
+                        <Tooltip title="Voir l'historique">
+                          <IconButton 
+                            onClick={() => {
+                              setSelectedDelivery(delivery);
+                              setHistoryDialogOpen(true);
+                            }}
+                            disabled={isSaving || isDeleting}
+                          >
+                            <HistoryIcon />
+                          </IconButton>
+                        </Tooltip>
                         <IconButton 
-                          onClick={() => {
-                            setSelectedDelivery(delivery);
-                            setHistoryDialogOpen(true);
-                          }}
+                          onClick={() => handleOpenDialog(delivery)} 
                           disabled={isSaving || isDeleting}
                         >
-                          <HistoryIcon />
+                          <EditIcon />
                         </IconButton>
-                      </Tooltip>
-                      <IconButton 
-                        onClick={() => handleOpenDialog(delivery)} 
-                        disabled={isSaving || isDeleting}
-                      >
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton 
-                        onClick={() => handleDelete(delivery.id)} 
-                        disabled={isSaving || isDeleting}
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </TableCell>
+                        <IconButton 
+                          onClick={() => handleDelete(delivery.id)} 
+                          disabled={isSaving || isDeleting}
+                          color="error"
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))
               ) : (
@@ -1550,7 +1572,21 @@ export default function DeliveriesPage() {
                 }}
               >
                 {dependencies.orders
-                  ?.filter(order => order.status === 'en attente' || order.status === 'validée')
+                  ?.filter(order => {
+                    // Calculate remaining quantity, excluding quantities from the current delivery if editing
+                    const remainingQty = calculateRemainingQuantity(order.id, editDelivery?.id);
+                    
+                    // Show order if:
+                    // 1. It's not yet scheduled (status 'en attente' or 'validée') OR
+                    // 2. It has remaining quantity > 0 OR
+                    // 3. It's already in the current delivery being edited
+                    const isInCurrentDelivery = editDelivery?.order_ids?.includes(order.id);
+                    const isScheduled = order.status === 'planifié' || order.status === 'livré' || order.status === 'annulé';
+                    
+                    return (!isScheduled && (order.status === 'en attente' || order.status === 'validée')) || 
+                           remainingQty > 0 || 
+                           isInCurrentDelivery;
+                  })
                   .sort((a, b) => {
                     // Sort by client name, then by order date
                     const clientCompare = (a.client?.name || '').localeCompare(b.client?.name || '');
@@ -1573,13 +1609,24 @@ export default function DeliveriesPage() {
                             <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                               {order.client?.name || 'Client inconnu'}
                             </Typography>
-                            <Chip
-                              label={`${(parseFloat(order.quantity) + parseFloat(editDelivery?.order_quantities?.[order.id] ?? 0))}t`}
-                              size="small"
-                              color="primary"
-                              variant="outlined"
-                              sx={{ ml: 1, fontSize: '0.7rem' }}
-                            />
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <Chip
+                                label={`${calculateRemainingQuantity(order.id, editDelivery?.id).toFixed(1)}/${order.quantity}t`}
+                                size="small"
+                                color="primary"
+                                variant="outlined"
+                                sx={{ fontSize: '0.7rem' }}
+                              />
+                              {editDelivery?.order_quantities?.[order.id] && (
+                                <Chip
+                                  label={`+${editDelivery.order_quantities[order.id]}t`}
+                                  size="small"
+                                  color="secondary"
+                                  variant="outlined"
+                                  sx={{ fontSize: '0.7rem' }}
+                                />
+                              )}
+                            </Box>
                           </Box>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
                             <Typography variant="body2" color="text.secondary">
