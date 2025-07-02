@@ -21,65 +21,67 @@ def get_schedule():
 
     active_statuses = ["programmé", "en cours", "Programmé", "En cours"]
 
-    # All trucks (to keep empty ones in the result)
+    # All trucks to preserve order and report utilisation
     trucks = Truck.query.all()
 
-    # Deliveries that are currently planned
+    # Deliveries currently planned
     deliveries = Delivery.query.filter(Delivery.status.in_(active_statuses)).all()
 
-    # Map truck_id -> schedule item
-    # Each order entry will include the quantity scheduled for that delivery
-    schedule_map = {
-        t.id: {
-            "truck": t.plate_number, 
-            "orders": [], 
-            "load": 0,
-            "is_external": False  # Company trucks
-        } for t in trucks
-    }
-
+    # Build schedule items per delivery
+    schedule = []
+    used_trucks = set()
     scheduled_order_ids = set()
     scheduled_quantity = 0.0
 
     for d in deliveries:
-        entry = schedule_map.get(d.truck_id)
-        if not entry:
-            if d.is_external:
-                key = f"ext:{d.external_truck_label or 'Externe'}"
-                entry = schedule_map.setdefault(
-                    key,
-                    {
-                        "truck": d.external_truck_label or "Externe",
-                        "orders": [],
-                        "load": 0,
-                        "is_external": True,  # External trucks
-                    },
-                )
-            else:
-                continue
+        if d.truck_id:
+            used_trucks.add(d.truck_id)
+            truck_obj = Truck.query.get(d.truck_id)
+            truck_label = truck_obj.plate_number if truck_obj else str(d.truck_id)
+        else:
+            truck_label = d.external_truck_label or "Externe"
 
-        # Collect orders associated with this delivery with quantities
+        entry = {
+            "id": str(d.id),
+            "truck": truck_label,
+            "truck_id": str(d.truck_id) if d.truck_id else None,
+            "is_external": d.is_external,
+            "scheduled_date": d.scheduled_date.isoformat() if d.scheduled_date else None,
+            "scheduled_time": d.scheduled_time.strftime("%H:%M") if d.scheduled_time else None,
+            "orders": [],
+            "load": 0,
+        }
+
         links = d.order_links
         legacy_handled = False
         for link in links:
-            entry["orders"].append(
-                {"id": str(link.order_id), "quantity": link.quantity}
-            )
+            entry["orders"].append({"id": str(link.order_id), "quantity": link.quantity})
             scheduled_order_ids.add(link.order_id)
             scheduled_quantity += link.quantity
+            entry["load"] += link.quantity
             if d.order_id and link.order_id == d.order_id:
                 legacy_handled = True
 
-        # Handle legacy single order_id if not already represented in order_links
         if d.order_id and not legacy_handled:
             order = Order.query.get(d.order_id)
             qty = order.quantity if order else 0
             entry["orders"].append({"id": str(d.order_id), "quantity": qty})
             scheduled_order_ids.add(d.order_id)
             scheduled_quantity += qty
+            entry["load"] += qty
 
-    # Convert schedule map to list (keep truck order from DB)
-    schedule = list(schedule_map.values())
+        schedule.append(entry)
+
+    # Placeholder entries for trucks without deliveries
+    for t in trucks:
+        if t.id not in used_trucks:
+            schedule.append({
+                "truck": t.plate_number,
+                "truck_id": str(t.id),
+                "orders": [],
+                "load": 0,
+                "is_external": False,
+            })
 
     # Orders that are not yet planned
     pending_orders = Order.query.filter_by(status="en attente").all()
@@ -96,7 +98,7 @@ def get_schedule():
         "daily_limit": daily_limit,
         "scheduled_orders": len(scheduled_order_ids),
         "scheduled_quantity": scheduled_quantity,
-        "trucks_utilized": len([s for s in schedule if s["orders"] and not s.get("is_external", False)]),  # Only count company trucks with orders
+        "trucks_utilized": len(used_trucks),
     }
 
     return jsonify({"schedule": schedule, "stats": stats}), 200
