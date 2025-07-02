@@ -222,10 +222,9 @@ export default function SchedulePage({ autoRefresh = false }) {
     return truck ? truck.plate_number : truckId;
   };
 
-  // Helper: Compose delivery rows (with extra info)
-  const renderDeliveries = (orderEntries) => {
-    // orderEntries may contain just IDs or objects with id/quantity
-    const deliveries = orderEntries.map((entry, idx) => {
+  // Helper: parse order entries into detailed objects
+  const parseDeliveries = (orderEntries) => {
+    return orderEntries.map((entry, idx) => {
       const orderId = typeof entry === 'string' ? entry : entry.id;
       const qty = typeof entry === 'object' && entry !== null ? entry.quantity : null;
       const order = orders.find(o => o.id === orderId);
@@ -236,21 +235,34 @@ export default function SchedulePage({ autoRefresh = false }) {
         clientName: client ? client.name : orderId,
         quantity: qty != null ? qty : order?.quantity,
         requestedDate: order?.requested_date,
-        requestedTime: order?.requested_time?.slice(0,5) || '-', // "HH:MM"
+        requestedTime: order?.requested_time?.slice(0,5) || '-',
         product: product ? `${product.name}${product.type ? ` (${product.type})` : ''}` : '',
         orderObj: order
       };
     });
+  };
 
-    // Optional: sort deliveries by time or client
-    if (sortBy === 'time') {
-      deliveries.sort((a, b) => (a.requestedTime > b.requestedTime ? 1 : -1));
-    } else if (sortBy === 'client') {
-      deliveries.sort((a, b) => a.clientName.localeCompare(b.clientName));
-    }
-    // Default: order as per assignment (idx)
+  // Aggregate deliveries into a single row
+  const aggregateDeliveries = (orderEntries) => {
+    const deliveries = parseDeliveries(orderEntries);
+    if (deliveries.length === 0) return null;
 
-    return deliveries;
+    const clientParts = deliveries.map(d => `${d.clientName} ${d.quantity}T`);
+    const totalQty = deliveries.reduce((sum, d) => sum + (parseFloat(d.quantity) || 0), 0);
+    const productParts = [];
+    deliveries.forEach(d => {
+      if (d.product && !productParts.includes(d.product)) {
+        productParts.push(d.product);
+      }
+    });
+
+    return {
+      clientName: clientParts.join(' - '),
+      quantity: totalQty,
+      product: productParts.join(' - '),
+      requestedDate: deliveries[0].requestedDate,
+      requestedTime: deliveries[0].requestedTime
+    };
   };
 
   // Sort the entire planning (schedule array) based on sortBy
@@ -261,8 +273,8 @@ export default function SchedulePage({ autoRefresh = false }) {
     const sorted = [...schedule];
     if (sortBy === 'time') {
       sorted.sort((a, b) => {
-        const aDeliveries = renderDeliveries(a.orders);
-        const bDeliveries = renderDeliveries(b.orders);
+        const aDeliveries = parseDeliveries(a.orders);
+        const bDeliveries = parseDeliveries(b.orders);
         // Combine date and time for full chronological sorting
         const aDate = aDeliveries[0]?.requestedDate || '';
         const bDate = bDeliveries[0]?.requestedDate || '';
@@ -275,8 +287,8 @@ export default function SchedulePage({ autoRefresh = false }) {
       });
     } else if (sortBy === 'client') {
       sorted.sort((a, b) => {
-        const aDeliveries = renderDeliveries(a.orders);
-        const bDeliveries = renderDeliveries(b.orders);
+        const aDeliveries = parseDeliveries(a.orders);
+        const bDeliveries = parseDeliveries(b.orders);
         const aName = aDeliveries[0]?.clientName || '';
         const bName = bDeliveries[0]?.clientName || '';
         return aName.localeCompare(bName);
@@ -496,22 +508,21 @@ export default function SchedulePage({ autoRefresh = false }) {
               </TableHead>
               <TableBody>
                 {getSortedSchedule().map((item, idx) => {
-                  const deliveries = renderDeliveries(item.orders);
-                  // Separate row for each delivery, but only show truck for the first row
-                  return deliveries.length === 0 ? (
+                  const aggregated = aggregateDeliveries(item.orders);
+                  return !aggregated ? (
                     <TableRow key={idx}>
                       <TableCell colSpan={6} align="center">Aucune livraison</TableCell>
                     </TableRow>
-                  ) : deliveries.map((d, i) => (
-                    <TableRow key={i} style={tableStyles.row}>
-                      <TableCell>{d.clientName}</TableCell>
-                      <TableCell>{d.quantity}</TableCell>
-                      <TableCell>{d.product}</TableCell>
-                      <TableCell>{d.requestedDate}</TableCell>
-                      <TableCell>{d.requestedTime}</TableCell>
+                  ) : (
+                    <TableRow key={idx} style={tableStyles.row}>
+                      <TableCell>{aggregated.clientName}</TableCell>
+                      <TableCell>{aggregated.quantity}</TableCell>
+                      <TableCell>{aggregated.product}</TableCell>
+                      <TableCell>{aggregated.requestedDate}</TableCell>
+                      <TableCell>{aggregated.requestedTime}</TableCell>
                       <TableCell>{getTruckPlate(item.truck)}</TableCell>
                     </TableRow>
-                  ));
+                  );
                 })}
               </TableBody>
             </Table>
