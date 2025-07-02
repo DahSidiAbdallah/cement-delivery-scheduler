@@ -92,8 +92,26 @@ export default function LoginPage({ showNotification, onLoginSuccess }) {
       }
     } catch (err) {
       console.error('Login error:', err);
-      const errorMessage = err.response?.data?.error || 'Échec de la connexion. Veuillez réessayer.';
+      let errorMessage = 'Échec de la connexion. Veuillez réessayer.';
+      
+      // Handle specific error cases
+      if (err.response) {
+        if (err.response.status === 401) {
+          errorMessage = 'Identifiant ou mot de passe incorrect';
+        } else if (err.response.status === 400) {
+          errorMessage = 'Requête invalide. Vérifiez vos informations.';
+        } else if (err.response.status >= 500) {
+          errorMessage = 'Erreur du serveur. Veuillez réessayer plus tard.';
+        } else if (err.response.data?.error) {
+          errorMessage = err.response.data.error;
+        }
+      } else if (err.request) {
+        errorMessage = 'Impossible de se connecter au serveur. Vérifiez votre connexion internet.';
+      }
+      
       setError(errorMessage);
+      // Clear password field on error
+      setFormData(prev => ({ ...prev, password: '' }));
       triggerShake();
     } finally {
       setLoading(false);
