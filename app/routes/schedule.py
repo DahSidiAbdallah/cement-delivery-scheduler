@@ -134,42 +134,40 @@ def export_schedule():
         daily_limit,
     )
 
-    # Build Excel rows: aggregate orders per truck
+    # Build Excel rows: one per assignment
     rows = []
     for sch in schedule_result:
         truck = trucks.get(sch["truck"])
         truck_plate = truck.plate_number if truck else sch["truck"]
-        delivery_orders = [orders.get(oid) for oid in sch["orders"] if orders.get(oid)]
-        if not delivery_orders:
-            continue
+        for idx, order_id in enumerate(sch["orders"], 1):
+            order = orders.get(order_id)
+            if not order:
+                continue
+            client = clients.get(str(order.client_id))
+            product = products.get(str(order.product_id))
 
-        client_parts = []
-        product_parts = []
-        qty_total = 0
-
-        for o in delivery_orders:
-            client = clients.get(str(o.client_id))
-            product = products.get(str(o.product_id))
-            qty_total += o.quantity
-            client_name = client.name if client else str(o.client_id)
-            client_parts.append(f"{client_name} {o.quantity}T")
-            prod_label = (
-                f"{product.name} ({product.type})" if product and product.type else (product.name if product else "")
+            rows.append(
+                {
+                    "Client": client.name if client else str(order.client_id),
+                    "Quantité (t)": order.quantity,
+                    "Produit": (
+                        f"{product.name} ({product.type})"
+                        if product and product.type
+                        else (product.name if product else "")
+                    ),
+                    "Date": (
+                        order.requested_date.strftime("%Y-%m-%d")
+                        if order.requested_date
+                        else ""
+                    ),
+                    "Heure": (
+                        order.requested_time.strftime("%H:%M")
+                        if order.requested_time
+                        else ""
+                    ),
+                    "Camion": truck_plate,
+                }
             )
-            if prod_label and prod_label not in product_parts:
-                product_parts.append(prod_label)
-
-        order = delivery_orders[0]
-        rows.append(
-            {
-                "Client": " - ".join(client_parts),
-                "Quantité (t)": qty_total,
-                "Produit": " - ".join(product_parts),
-                "Date": order.requested_date.strftime("%Y-%m-%d") if order.requested_date else "",
-                "Heure": order.requested_time.strftime("%H:%M") if order.requested_time else "",
-                "Camion": truck_plate,
-            }
-        )
 
     # Make DataFrame & export to Excel
     df = pd.DataFrame(rows)
