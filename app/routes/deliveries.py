@@ -86,13 +86,16 @@ def create_delivery():
                 return jsonify({"error": "Invalid time format, should be HH:MM"}), 400
 
         # ===== Business validations =====
-        # 1. Orders must not already be scheduled
+        # 1. Ensure orders still have remaining quantity
         for oid in order_ids:
-            existing = DeliveryOrder.query.filter_by(order_id=oid).first()
-            if existing:
-                return jsonify({"error": "Order already scheduled"}), 400
-            if Delivery.query.filter_by(order_id=oid).first():
-                return jsonify({"error": "Order already scheduled"}), 400
+            order = Order.query.get(oid)
+            if not order:
+                return jsonify({"error": f"Order {oid} not found"}), 400
+            if order.quantity <= 0:
+                return (
+                    jsonify({"error": f"Order {oid} has no remaining quantity"}),
+                    400,
+                )
 
         # 2. Date/time must be in the future
         if data.get("scheduled_date"):
